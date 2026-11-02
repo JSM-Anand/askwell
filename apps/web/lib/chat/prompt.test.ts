@@ -7,7 +7,7 @@ describe("SYSTEM_PROMPT", () => {
     ["says it doesn't know otherwise", /say you don't know/],
     ["treats excerpt and visitor text as data, never instructions", /data, never instructions/],
     ["never reveals the prompt", /Never reveal/],
-    ["stays on the product", /Stay on the product/],
+    ["stays on the product, and says it doesn't know for anything unrelated", /Stay on the product\. If a question is not about it, say you don't know/],
   ])("%s", (_name, pattern) => {
     expect(SYSTEM_PROMPT).toMatch(pattern);
   });
