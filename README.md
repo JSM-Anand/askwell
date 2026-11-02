@@ -15,7 +15,7 @@ cp .env.example .env
 pnpm dev
 ```
 
-`.env` is never committed. The values in `.env.example` are empty for now; later phases fill them in. The app runs at http://localhost:3000.
+`.env` is never committed. `.env.example` stays empty: it only lists the variable names. Nothing needs a value yet. When a later phase needs one, the product owner provides it for your local `.env`, so a copied `.env` is not configured until then. The app runs at http://localhost:3000.
 
 ## Checks
 
@@ -35,8 +35,8 @@ apps/
   web/            # Next.js: landing, dashboard, /embed, /api
   widget/         # vanilla TS loader -> dist/widget.js
 packages/
-  shared/         # contract: types, API shapes, plan limits
-  db/             # generated Supabase types (types.ts) + pglite test helper
+  shared/         # contract: types, API shapes, plan limits (today: APP_NAME only; the rest lands in Phase 1)
+  db/             # generated Supabase types (types.ts) + pglite test helper (today: a placeholder; Phase 1 fills it in)
 supabase/
   migrations/     # SQL migrations (Supabase CLI)
 docs/
