@@ -178,18 +178,13 @@ $$;
 -- sources in p_project_id: another project's chunks and chunks of a source that
 -- is still processing or failed are never returned.
 --
--- The HNSW index is approximate and covers every project's chunks. Without help,
--- Postgres takes the nearest hnsw.ef_search (default 40) chunks of ALL projects
--- and only then applies the project and status filter, so a small project could
--- get fewer than p_count rows, or none, while other projects hold closer chunks.
--- hnsw.iterative_scan = 'relaxed_order' (pgvector 0.8+) keeps scanning the index
--- until the filter has produced p_count rows. It may return rows slightly out of
--- order, so the nearest p_count are fetched in a materialized step and sorted
--- again exactly.
--- Remaining limit: the scan stops after hnsw.max_scan_tuples (default 20000)
--- index entries, so a project whose chunks all sit beyond the 20,000 closest
--- chunks of every project could still come back short. If chunk counts ever get
--- near that, raise the setting here or scan the project's own rows exactly.
+-- Exact, not approximate: the project's own ready chunks are collected first (a
+-- materialized step, found through knowledge_chunks_project_id_idx), then ranked.
+-- That keeps the HNSW index out of it on purpose. The index spans every project and
+-- is searched before any filter applies, so a small project could get fewer than
+-- p_count rows, or none, while other projects hold closer chunks. The trade-off:
+-- the cost grows with one project's chunk count (bounded by the plan's source
+-- limit), not with the whole table.
 
 create function public.match_chunks(
   p_project_id uuid,
@@ -201,7 +196,6 @@ language plpgsql
 stable
 security invoker
 set search_path = ''
-set hnsw.iterative_scan = 'relaxed_order'
 as $$
 begin
   if p_count is null or p_count < 1 then
@@ -209,21 +203,20 @@ begin
   end if;
 
   return query
-  with nearest as materialized (
-    select c.id,
-           c.source_id,
-           c.content,
-           c.embedding operator(extensions.<=>) p_embedding as distance
+  with scoped as materialized (
+    select c.id, c.source_id, c.content, c.embedding
     from public.knowledge_chunks c
     join public.knowledge_sources s on s.id = c.source_id and s.project_id = c.project_id
     where c.project_id = p_project_id
       and s.status = 'ready'
-    order by c.embedding operator(extensions.<=>) p_embedding
-    limit p_count
   )
-  select n.id, n.source_id, n.content, 1 - n.distance
-  from nearest n
-  order by n.distance + 0;
+  select sc.id,
+         sc.source_id,
+         sc.content,
+         1 - (sc.embedding operator(extensions.<=>) p_embedding)
+  from scoped sc
+  order by sc.embedding operator(extensions.<=>) p_embedding
+  limit p_count;
 end;
 $$;
 
