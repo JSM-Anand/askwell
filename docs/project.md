@@ -45,7 +45,7 @@ The whole product in one flow. When this works end to end, the product is done.
 | Hosting          | Vercel                                       | Preview deployment per PR; production from `main`. Request bodies are capped at 4.5 MB, so files never pass through our routes. |
 | Auth             | Clerk                                        | Sign in / sign up UI, sessions, middleware. Supabase accepts Clerk session tokens (third-party auth), so RLS reads the user ID from `auth.jwt()->>'sub'`. |
 | Payments         | Clerk Billing (Clerk payment gateway, test mode) | Clerk's pricing table, Clerk's account portal, Clerk webhook. No Stripe account.    |
-| AI               | OpenAI                                       | One chat model + one embedding model (`text-embedding-3-small`, 1536 dims)              |
+| AI               | Google Gemini                                | One chat model + one embedding model (1536 dims)                                        |
 | Security         | Arcjet                                       | On the public widget routes: a fixed-window rate limit per route + public key + IP, and prompt injection detection on chat messages before any AI call. Fails open: an Arcjet error or timeout lets the request through and is logged. The monthly message quota stays in Postgres. |
 | Analytics        | PostHog                                      | Product analytics, session replay, error tracking, AI tracing                           |
 
@@ -342,7 +342,7 @@ docs/
 | `SUPABASE_SECRET_KEY` (acts as `service_role`, skips RLS)                        | Server only     | No      |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`                                              | Client          | Yes     |
 | `CLERK_SECRET_KEY`                                                               | Server          | No      |
-| `OPENAI_API_KEY`                                                                 | Server          | No      |
+| `GEMINI_API_KEY`                                                                 | Server          | No      |
 | `CLERK_WEBHOOK_SIGNING_SECRET`                                                   | Server          | No      |
 | `ARCJET_KEY`                                                                     | Server          | No      |
 | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`                            | Client + server | Yes     |

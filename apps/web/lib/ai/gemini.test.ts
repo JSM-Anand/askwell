@@ -1,0 +1,54 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+const { GoogleGenAI } = vi.hoisted(() => ({ GoogleGenAI: vi.fn() }));
+vi.mock("@google/genai", () => ({ GoogleGenAI }));
+
+import { CHAT_MODEL, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./models";
+
+async function loadFresh() {
+  vi.resetModules();
+  return (await import("./gemini")).getGemini;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv("GEMINI_API_KEY", "test-key");
+});
+afterEach(() => vi.unstubAllEnvs());
+
+describe("getGemini", () => {
+  it("creates the client with GEMINI_API_KEY", async () => {
+    const getGemini = await loadFresh();
+    getGemini();
+    expect(GoogleGenAI).toHaveBeenCalledTimes(1);
+    expect(GoogleGenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "test-key" }));
+  });
+
+  it("returns the same client every time", async () => {
+    const getGemini = await loadFresh();
+    expect(getGemini()).toBe(getGemini());
+    expect(GoogleGenAI).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws a clear error when the key is missing, and doesn't create a client", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    const getGemini = await loadFresh();
+    expect(() => getGemini()).toThrow("Missing environment variable GEMINI_API_KEY");
+    expect(GoogleGenAI).not.toHaveBeenCalled();
+  });
+
+  it("fails on first use, not on import, so a missing key doesn't break the build", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    await expect(loadFresh()).resolves.toBeTypeOf("function");
+  });
+});
+
+describe("models", () => {
+  it("names the models and the vector size", () => {
+    expect(EMBEDDING_MODEL).toBe("gemini-embedding-2");
+    expect(EMBEDDING_DIMENSIONS).toBe(1536);
+    expect(CHAT_MODEL).toBe("gemini-3.1-flash-lite");
+  });
+});
