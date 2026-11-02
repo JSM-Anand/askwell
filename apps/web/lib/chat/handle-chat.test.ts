@@ -145,6 +145,32 @@ describe("a conversation in progress", () => {
     expect(result.body).toEqual({ conversationId: CONVERSATION, reply: "We open at 9am." });
   });
 
+  it("searches with the previous visitor message and the current one together, in ONE embedding call", async () => {
+    m.loadHistory.mockResolvedValueOnce([
+      { role: "visitor", body: "How much is a flat white?" },
+      { role: "bot", body: "A flat white costs 4.50." },
+      { role: "visitor", body: "And a cappuccino?" },
+      { role: "bot", body: "A cappuccino costs 4.80." },
+    ]);
+    await handleChat(request(), body({ conversationId: CONVERSATION, message: "What about oat milk?" }));
+    expect(m.embedQuery).toHaveBeenCalledTimes(1);
+    // The most recent visitor message, not a bot message and not an older question.
+    expect(m.embedQuery).toHaveBeenCalledWith("And a cappuccino?\nWhat about oat milk?");
+    // The model still gets only the current question in its final turn.
+    const { messages } = m.generateAnswer.mock.calls[0]![0] as { messages: { content: string }[] };
+    expect(messages.at(-1)!.content).toContain("<question>\nWhat about oat milk?\n</question>");
+    expect(messages.at(-1)!.content).not.toContain("And a cappuccino?\nWhat about");
+  });
+
+  it("loads the history before searching, and searches with the question alone when the history has no visitor message", async () => {
+    m.loadHistory.mockResolvedValueOnce([{ role: "bot", body: "stray" }]);
+    await handleChat(request(), body({ conversationId: CONVERSATION }));
+    const at = (fn: { mock: { invocationCallOrder: number[] } }) => fn.mock.invocationCallOrder[0]!;
+    expect(at(m.loadHistory)).toBeGreaterThan(at(m.consumeMessage));
+    expect(at(m.loadHistory)).toBeLessThan(at(m.embedQuery));
+    expect(m.embedQuery).toHaveBeenCalledWith("When do you open?");
+  });
+
   it("drops a leading bot message from the history, since a conversation starts with the visitor", async () => {
     m.loadHistory.mockResolvedValueOnce([
       { role: "bot", body: "stray" },
@@ -238,6 +264,15 @@ describe("the monthly quota", () => {
 });
 
 describe("a project with no chunks", () => {
+  it("in a conversation: still searches with the previous question, then replies without calling the chat model", async () => {
+    m.loadHistory.mockResolvedValueOnce([{ role: "visitor", body: "Earlier question" }, { role: "bot", body: "Earlier answer" }]);
+    m.findExcerpts.mockResolvedValueOnce([]);
+    const result = await handleChat(request(), body({ conversationId: CONVERSATION }));
+    expect(m.embedQuery).toHaveBeenCalledWith("Earlier question\nWhen do you open?");
+    expect((result.body as { reply: string }).reply).toBe(NO_ANSWER_REPLY);
+    expect(m.generateAnswer).not.toHaveBeenCalled();
+  });
+
   it("replies with the fixed 'I don't know' without calling the chat model, and still saves the turn", async () => {
     m.findExcerpts.mockResolvedValueOnce([]);
     const result = await handleChat(request(), body());

@@ -65,15 +65,19 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
 
   // From here the message is counted: a failure below still uses it (no refund).
   try {
-    // 4. Retrieve.
-    const excerpts = await findExcerpts(projectId, await embedQuery(message));
+    // 5. History (read first: it also feeds the search, so a follow-up like "and on Sundays?" can be found).
+    const history = conversationId ? await loadHistory(conversationId) : [];
+
+    // 4. Retrieve. One embedding: the previous visitor message and the current one together when there is history.
+    const previousQuestion = [...history].reverse().find((m) => m.role === "visitor")?.body;
+    const searchText = previousQuestion ? `${previousQuestion}\n${message}` : message;
+    const excerpts = await findExcerpts(projectId, await embedQuery(searchText));
 
     let reply: string;
     if (excerpts.length === 0) {
       reply = NO_ANSWER_REPLY; // nothing to answer from: the chat model is not called
     } else {
-      // 5. History, then 6. answer. Phase 4: AI tracing wraps generateAnswer.
-      const history = conversationId ? await loadHistory(conversationId) : [];
+      // 6. Answer. Phase 4: AI tracing wraps generateAnswer.
       reply = await generateAnswer({
         system: SYSTEM_PROMPT,
         messages: [
