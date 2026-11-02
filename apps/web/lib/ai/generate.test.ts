@@ -7,13 +7,15 @@ const { generateContent } = vi.hoisted(() => ({ generateContent: vi.fn() }));
 vi.mock("./gemini", () => ({ getGemini: () => ({ models: { generateContent } }) }));
 
 import { generateAnswer } from "./generate";
-import { CHAT_MODEL } from "./models";
-import { AiRateLimitError, RATE_LIMIT_RETRY_DELAY_MS } from "./rate-limit";
+import { CHAT_FALLBACK_MODEL, CHAT_MODEL } from "./models";
+import { AiRateLimitError, BUSY_RETRY_DELAY_MS } from "./rate-limit";
 
 const reply = (text: string | undefined) => ({ text });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "error").mockImplementation(() => {});
   generateContent.mockResolvedValue(reply("We open at 9."));
 });
 afterEach(() => vi.useRealTimers());
@@ -73,24 +75,118 @@ describe("generateAnswer", () => {
     expect(generateContent).toHaveBeenCalledTimes(1);
   });
 
-  describe("rate limits", () => {
-    beforeEach(() => vi.useFakeTimers());
+});
 
-    it("retries a 429 once after a pause and returns the answer", async () => {
-      generateContent.mockRejectedValueOnce(new ApiError({ message: "RESOURCE_EXHAUSTED", status: 429 }));
-      const result = generateAnswer({ system: "s", messages: [{ role: "user", content: "q" }] });
-      await vi.advanceTimersByTimeAsync(RATE_LIMIT_RETRY_DELAY_MS);
-      await expect(result).resolves.toBe("We open at 9.");
-      expect(generateContent).toHaveBeenCalledTimes(2);
-    });
+const ask = () => generateAnswer({ system: "Be brief.", messages: [{ role: "user", content: "When do you open?" }] });
+const modelsUsed = () => generateContent.mock.calls.map(([params]) => (params as { model: string }).model);
+const apiError = (status: number) => new ApiError({ message: `status ${status}`, status });
 
-    it("throws an AiRateLimitError after a second 429", async () => {
-      generateContent.mockRejectedValue(new ApiError({ message: "RESOURCE_EXHAUSTED", status: 429 }));
-      const result = generateAnswer({ system: "s", messages: [{ role: "user", content: "q" }] });
-      const assertion = expect(result).rejects.toBeInstanceOf(AiRateLimitError);
-      await vi.advanceTimersByTimeAsync(RATE_LIMIT_RETRY_DELAY_MS);
-      await assertion;
-      expect(generateContent).toHaveBeenCalledTimes(2);
-    });
+describe("generateAnswer when the chat model is busy", () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  /** Runs ask() through the retry pause and returns what it settled to. */
+  const settle = async () => {
+    const result = ask();
+    const outcome = result.then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
+    return outcome;
+  };
+
+  it.each([429, 503])("retries a %i on the same model after a pause, and answers from it", async (status) => {
+    generateContent.mockRejectedValueOnce(apiError(status)).mockResolvedValueOnce(reply("Primary answer."));
+    const result = ask();
+    await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS - 1);
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(result).resolves.toBe("Primary answer.");
+    expect(modelsUsed()).toEqual([CHAT_MODEL, CHAT_MODEL]);
+  });
+
+  it.each([429, 503])("after two %is, answers from the fallback model with the same request", async (status) => {
+    generateContent
+      .mockRejectedValueOnce(apiError(status))
+      .mockRejectedValueOnce(apiError(status))
+      .mockResolvedValueOnce(reply("Fallback answer."));
+    const outcome = await settle();
+
+    expect(outcome).toEqual({ value: "Fallback answer." });
+    expect(modelsUsed()).toEqual([CHAT_MODEL, CHAT_MODEL, CHAT_FALLBACK_MODEL]);
+    const [primary, , fallback] = generateContent.mock.calls.map(([params]) => params);
+    expect(fallback.contents).toEqual(primary.contents);
+    expect(fallback.config).toEqual({ systemInstruction: "Be brief." });
+  });
+
+  it("does not use the fallback when the retry succeeds", async () => {
+    generateContent.mockRejectedValueOnce(apiError(503)).mockResolvedValueOnce(reply("ok"));
+    await settle();
+    expect(modelsUsed()).not.toContain(CHAT_FALLBACK_MODEL);
+  });
+
+  it("tries the fallback model once, with no retry of its own", async () => {
+    generateContent.mockRejectedValue(apiError(503));
+    const outcome = await settle();
+    expect(outcome).toHaveProperty("error");
+    expect(modelsUsed()).toEqual([CHAT_MODEL, CHAT_MODEL, CHAT_FALLBACK_MODEL]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("when the fallback is busy too, throws the typed busy error (with the cause)", async () => {
+    generateContent.mockRejectedValue(apiError(503));
+    const outcome = (await settle()) as { error: AiRateLimitError };
+    expect(outcome.error).toBeInstanceOf(AiRateLimitError);
+    expect((outcome.error.cause as ApiError).status).toBe(503);
+  });
+
+  it("when the fallback fails some other way, still throws the busy error, so the visitor never sees a generic failure", async () => {
+    generateContent
+      .mockRejectedValueOnce(apiError(503))
+      .mockRejectedValueOnce(apiError(503))
+      .mockRejectedValueOnce(apiError(500));
+    const outcome = (await settle()) as { error: unknown };
+    expect(outcome.error).toBeInstanceOf(AiRateLimitError);
+    expect(console.error).toHaveBeenCalled(); // and the real failure is logged
+  });
+
+  it("an empty answer from the fallback is still an error", async () => {
+    generateContent.mockRejectedValueOnce(apiError(503)).mockRejectedValueOnce(apiError(503)).mockResolvedValueOnce(reply(""));
+    const outcome = (await settle()) as { error: Error };
+    expect(outcome.error.message).toBe("The model returned no text");
+  });
+
+  it("logs that the fallback is being used", async () => {
+    generateContent.mockRejectedValueOnce(apiError(503)).mockRejectedValueOnce(apiError(503)).mockResolvedValueOnce(reply("ok"));
+    await settle();
+    expect(vi.mocked(console.warn).mock.calls[0]?.join(" ")).toContain(CHAT_FALLBACK_MODEL);
+  });
+});
+
+describe("generateAnswer when the chat model is not found", () => {
+  it("goes straight to the fallback model, with no retry or pause", async () => {
+    generateContent.mockRejectedValueOnce(apiError(404)).mockResolvedValueOnce(reply("Fallback answer."));
+    await expect(ask()).resolves.toBe("Fallback answer.");
+    expect(modelsUsed()).toEqual([CHAT_MODEL, CHAT_FALLBACK_MODEL]);
+  });
+
+  it("if the fallback fails too, throws the busy error", async () => {
+    generateContent.mockRejectedValue(apiError(404));
+    await expect(ask()).rejects.toBeInstanceOf(AiRateLimitError);
+    expect(modelsUsed()).toEqual([CHAT_MODEL, CHAT_FALLBACK_MODEL]);
+  });
+});
+
+describe("generateAnswer with errors that are not about load", () => {
+  it.each([400, 401, 403, 500])("throws a %i as is: no retry, no fallback model", async (status) => {
+    generateContent.mockRejectedValue(apiError(status));
+    await expect(ask()).rejects.toThrow(`status ${status}`);
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(modelsUsed()).toEqual([CHAT_MODEL]);
+  });
+
+  it("never touches the fallback model when the primary works", async () => {
+    await ask();
+    expect(modelsUsed()).toEqual([CHAT_MODEL]);
   });
 });

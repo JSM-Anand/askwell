@@ -1,7 +1,7 @@
 import "server-only";
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./models";
 import { getGemini } from "./gemini";
-import { withRateLimitRetry } from "./rate-limit";
+import { withBusyRetry } from "./rate-limit";
 
 /** Texts per request. Chunks are a few hundred tokens, so 100 stays well inside the input limits. */
 export const EMBEDDING_BATCH_SIZE = 100;
@@ -23,7 +23,7 @@ const assertNotEmpty = (text: string) => {
  * gemini-embedding-2 normalises truncated vectors itself, so there is nothing to normalise here.
  */
 async function embedBatch(inputs: string[]): Promise<number[][]> {
-  const response = await withRateLimitRetry(() =>
+  const response = await withBusyRetry(() =>
     getGemini().models.embedContent({
       model: EMBEDDING_MODEL,
       contents: inputs.map((text) => ({ parts: [{ text }] })),
@@ -46,7 +46,8 @@ async function embedBatch(inputs: string[]): Promise<number[][]> {
 /**
  * Embeds each text to be stored (a knowledge chunk) and returns the vectors in the same order.
  * Texts are sent in batches; every vector is checked to be EMBEDDING_DIMENSIONS long. A rate limit
- * (429) is retried once, then thrown as an AiRateLimitError; any other API error is thrown as is.
+ * or an overloaded model (429, 503) is retried once, then thrown as an AiRateLimitError; any other API error
+ * is thrown as is. Embeddings never fall back to another model: vectors from different models can't be compared.
  */
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   texts.forEach(assertNotEmpty);

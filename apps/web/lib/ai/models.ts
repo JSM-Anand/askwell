@@ -17,3 +17,15 @@ export const EMBEDDING_DIMENSIONS = 1536;
  * https://ai.google.dev/gemini-api/docs/pricing
  */
 export const CHAT_MODEL = "gemini-3.1-flash-lite";
+
+/**
+ * Tried once when CHAT_MODEL is still busy after its retry (or is not found). The next price step up
+ * among the current Flash models, free of charge on the free tier ($0.30 / $2.50 per million input /
+ * output tokens on the paid tier), and Google's recommended replacement for gemini-3.1-flash-lite.
+ * gemini-2.5-flash-lite is cheaper but Google now limits the 2.5 models to existing users and points
+ * new projects at 3.5 Flash-Lite. Only for answers: embeddings never switch model, because vectors from
+ * different models can't be compared.
+ * Sources: https://ai.google.dev/gemini-api/docs/models, https://ai.google.dev/gemini-api/docs/pricing
+ * and https://ai.google.dev/gemini-api/docs/deprecations
+ */
+export const CHAT_FALLBACK_MODEL = "gemini-3.5-flash-lite";

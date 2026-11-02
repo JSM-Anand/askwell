@@ -8,7 +8,7 @@ vi.mock("./gemini", () => ({ getGemini: () => ({ models: { embedContent } }) }))
 
 import { EMBEDDING_BATCH_SIZE, embedQuery, embedTexts } from "./embed";
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./models";
-import { AiRateLimitError, RATE_LIMIT_RETRY_DELAY_MS } from "./rate-limit";
+import { AiRateLimitError, BUSY_RETRY_DELAY_MS } from "./rate-limit";
 
 type Params = { model: string; contents: { parts: { text: string }[] }[]; config: { outputDimensionality: number } };
 
@@ -117,17 +117,56 @@ describe("embedTexts", () => {
     it("retries a 429 once after a pause and returns the vectors", async () => {
       embedContent.mockRejectedValueOnce(new ApiError({ message: "RESOURCE_EXHAUSTED", status: 429 }));
       const result = embedTexts(["5"]);
-      await vi.advanceTimersByTimeAsync(RATE_LIMIT_RETRY_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
       const vectors = await result;
       expect(vectors.map((v) => v[0])).toEqual([5]);
       expect(embedContent).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries a 503 (UNAVAILABLE, high demand) once after a pause and returns the vectors", async () => {
+      embedContent.mockRejectedValueOnce(new ApiError({ message: "UNAVAILABLE", status: 503 }));
+      const result = embedTexts(["6"]);
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
+      expect((await result).map((v) => v[0])).toEqual([6]);
+      expect(embedContent).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws an AiRateLimitError after two 503s", async () => {
+      embedContent.mockRejectedValue(new ApiError({ message: "UNAVAILABLE", status: 503 }));
+      const result = embedTexts(["5"]);
+      const assertion = expect(result).rejects.toBeInstanceOf(AiRateLimitError);
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
+      await assertion;
+      expect(embedContent).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([400, 401])("does not retry a %i", async (status) => {
+      embedContent.mockRejectedValue(new ApiError({ message: "rejected", status }));
+      await expect(embedTexts(["5"])).rejects.toThrow("rejected");
+      expect(embedContent).toHaveBeenCalledTimes(1);
+    });
+
+    it("never switches to another model, however busy the embedding model is: every attempt uses EMBEDDING_MODEL", async () => {
+      embedContent.mockRejectedValue(new ApiError({ message: "UNAVAILABLE", status: 503 }));
+      const documents = embedTexts(["5"]);
+      const documentsAssertion = expect(documents).rejects.toBeInstanceOf(AiRateLimitError);
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
+      await documentsAssertion;
+      const query = embedQuery("hi");
+      const queryAssertion = expect(query).rejects.toBeInstanceOf(AiRateLimitError);
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
+      await queryAssertion;
+
+      const models = embedContent.mock.calls.map(([params]) => (params as Params).model);
+      expect(models).toHaveLength(4);
+      expect(new Set(models)).toEqual(new Set([EMBEDDING_MODEL]));
     });
 
     it("throws an AiRateLimitError after a second 429", async () => {
       embedContent.mockRejectedValue(new ApiError({ message: "RESOURCE_EXHAUSTED", status: 429 }));
       const result = embedTexts(["5"]);
       const assertion = expect(result).rejects.toBeInstanceOf(AiRateLimitError);
-      await vi.advanceTimersByTimeAsync(RATE_LIMIT_RETRY_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
       await assertion;
       expect(embedContent).toHaveBeenCalledTimes(2);
     });
@@ -171,7 +210,7 @@ describe("embedQuery", () => {
     embedContent.mockRejectedValue(new ApiError({ message: "RESOURCE_EXHAUSTED", status: 429 }));
     const result = embedQuery("hi");
     const assertion = expect(result).rejects.toBeInstanceOf(AiRateLimitError);
-    await vi.advanceTimersByTimeAsync(RATE_LIMIT_RETRY_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
     await assertion;
     expect(embedContent).toHaveBeenCalledTimes(2);
   });

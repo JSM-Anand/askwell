@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}));
 const { GoogleGenAI } = vi.hoisted(() => ({ GoogleGenAI: vi.fn() }));
 vi.mock("@google/genai", () => ({ GoogleGenAI }));
 
-import { CHAT_MODEL, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./models";
+import { CHAT_FALLBACK_MODEL, CHAT_MODEL, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./models";
 
 async function loadFresh() {
   vi.resetModules();
@@ -50,5 +50,7 @@ describe("models", () => {
     expect(EMBEDDING_MODEL).toBe("gemini-embedding-2");
     expect(EMBEDDING_DIMENSIONS).toBe(1536);
     expect(CHAT_MODEL).toBe("gemini-3.1-flash-lite");
+    expect(CHAT_FALLBACK_MODEL).toBe("gemini-3.5-flash-lite");
+    expect(CHAT_FALLBACK_MODEL).not.toBe(CHAT_MODEL);
   });
 });
