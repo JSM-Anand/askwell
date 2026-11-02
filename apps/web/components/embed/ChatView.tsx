@@ -61,10 +61,13 @@ export function ChatView({ messages, typing, draft, showBadge, onDraftChange, on
         {messages.map((m) => (
           <p
             key={m.id}
+            role={m.from === "notice" ? "alert" : undefined}
             className={`max-w-[85%] whitespace-pre-wrap break-words rounded-md px-3 py-2 text-sm ${
               m.from === "visitor"
                 ? "self-end bg-accent text-accent-fg"
-                : "self-start border border-glass-border bg-glass"
+                : m.from === "notice"
+                  ? "self-start border border-danger bg-danger-soft"
+                  : "self-start border border-glass-border bg-glass"
             }`}
           >
             {m.text}
@@ -82,6 +85,7 @@ export function ChatView({ messages, typing, draft, showBadge, onDraftChange, on
           placeholder="Type your question"
           value={draft}
           maxLength={MAX_MESSAGE_LENGTH}
+          disabled={typing}
           onChange={(event) => onDraftChange(event.target.value)}
         />
         <Button type="submit" disabled={!canSend(draft, typing)}>

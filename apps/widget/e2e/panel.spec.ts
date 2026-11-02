@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { APP, HOST, mockConfig, recordMessages, seenMessages } from "./helpers";
+import { APP, HOST, errorBody, mockChat, mockConfig, recordMessages, seenMessages } from "./helpers";
 
-// T06's deferred browser checks: the /embed panel inside the widget's iframe, across origins.
-// Needs the /embed page (P2P-T06) in the running app.
+// The /embed panel inside the widget's iframe, across origins, talking to the chat route.
+// The config and chat routes are mocked, so no project or knowledge is needed in the database.
 
-const MOCK_REPLY = "Thanks! Real answers arrive soon.";
+const CONVERSATION = "2f0d4c6e-3b1a-4c1e-9d3b-5a6f7e8d9c10";
+const REPLY = "We open at 9am.";
 
 async function openPanel(page: import("@playwright/test").Page) {
   await page.goto(HOST);
@@ -12,26 +13,75 @@ async function openPanel(page: import("@playwright/test").Page) {
   return page.frameLocator("iframe");
 }
 
-test("send → typing → mock reply", async ({ page }) => {
+test("send → typing → the route's reply, with the input disabled while waiting", async ({ page }) => {
   await mockConfig(page, { headerText: "Ask Acme" });
+  await mockChat(page, () => ({ body: { conversationId: CONVERSATION, reply: REPLY }, delayMs: 700 }));
   const panel = await openPanel(page);
   await expect(panel.getByRole("heading", { name: "Ask Acme" })).toBeVisible();
 
-  await panel.getByLabel("Your message").fill("hello");
-  await panel.getByLabel("Your message").press("Enter");
+  const input = panel.getByLabel("Your message");
+  await input.fill("hello");
+  await input.press("Enter");
   await expect(panel.getByText("hello", { exact: true })).toBeVisible();
   await expect(panel.getByRole("status")).toContainText("Typing");
-  await expect(panel.getByText(MOCK_REPLY)).toBeVisible({ timeout: 5000 });
+  await expect(input).toBeDisabled();
+  await expect(panel.getByText(REPLY)).toBeVisible({ timeout: 5000 });
   await expect(panel.getByRole("status")).toHaveCount(0);
+  await expect(input).toBeEnabled();
 });
 
-test("<b>hi</b> shows as literal text", async ({ page }) => {
+test("the conversation carries across messages, with the key and the stored visitor ID", async ({ page }) => {
   await mockConfig(page);
+  const requests = await mockChat(page, (_body, n) => ({ body: { conversationId: CONVERSATION, reply: `answer ${n}` } }));
+  const panel = await openPanel(page);
+  const input = panel.getByLabel("Your message");
+
+  await input.fill("first question");
+  await input.press("Enter");
+  await expect(panel.getByText("answer 1")).toBeVisible();
+  await input.fill("and a follow-up");
+  await input.press("Enter");
+  await expect(panel.getByText("answer 2")).toBeVisible();
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).not.toHaveProperty("conversationId");
+  expect(requests[0]).toMatchObject({ key: "pk_demo", message: "first question" });
+  expect(requests[1]).toMatchObject({ conversationId: CONVERSATION, message: "and a follow-up" });
+  expect(requests[1]!.visitorId).toBe(requests[0]!.visitorId);
+});
+
+for (const [name, status, code, message] of [
+  ["429 rate_limited", 429, "rate_limited", "You're sending messages quickly. Try again in a minute."],
+  ["429 quota_exceeded", 429, "quota_exceeded", "This chat has reached its monthly limit."],
+  ["400 prompt_injection", 400, "prompt_injection", "I can't help with that."],
+  ["503 (the AI is busy)", 503, "internal_error", "The assistant is busy right now. Try again in a moment."],
+  ["500", 500, "internal_error", "Something went wrong. Try again."],
+] as const) {
+  test(`${name} shows its friendly message and the panel stays usable`, async ({ page }) => {
+    await mockConfig(page);
+    await mockChat(page, () => ({ status, body: errorBody(code) }));
+    const panel = await openPanel(page);
+    const input = panel.getByLabel("Your message");
+    await input.fill("hello");
+    await input.press("Enter");
+
+    // Next adds its own role="alert" route announcer, so pick the notice by its text.
+    await expect(panel.getByRole("alert").filter({ hasText: message })).toHaveCount(1);
+    await expect(panel.getByText("server wording")).toHaveCount(0);
+    await expect(panel.getByText("hello", { exact: true })).toBeVisible();
+    await expect(input).toBeEnabled();
+  });
+}
+
+test("<b>hi</b> and markup in a reply show as literal text", async ({ page }) => {
+  await mockConfig(page);
+  await mockChat(page, () => ({ body: { conversationId: CONVERSATION, reply: "<i>italic</i> and <b>bold</b>" } }));
   const panel = await openPanel(page);
   await panel.getByLabel("Your message").fill("<b>hi</b>");
   await panel.getByLabel("Your message").press("Enter");
   await expect(panel.getByText("<b>hi</b>", { exact: true })).toBeVisible();
-  await expect(panel.locator("b")).toHaveCount(0);
+  await expect(panel.getByText("<i>italic</i> and <b>bold</b>", { exact: true })).toBeVisible();
+  await expect(panel.locator("b, i")).toHaveCount(0);
 });
 
 test("the same visitor ID after a reload", async ({ page }) => {

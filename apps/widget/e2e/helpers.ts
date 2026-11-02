@@ -28,3 +28,24 @@ export async function recordMessages(page: Page) {
 
 export const seenMessages = (page: Page) =>
   page.evaluate(() => (window as unknown as { __seen: { origin: string; data: unknown }[] }).__seen);
+
+export type ChatRequestBody = { key: string; visitorId: string; conversationId?: string; message: string };
+export type ChatAnswer = { status?: number; body: unknown; delayMs?: number };
+
+/**
+ * Answer POST /api/widget/chat from the test, so the panel runs against a known route (the real one needs a
+ * project with knowledge in the database). Returns the request bodies the panel sent, in order.
+ */
+export async function mockChat(page: Page, answer: (body: ChatRequestBody, n: number) => ChatAnswer) {
+  const requests: ChatRequestBody[] = [];
+  await page.route("**/api/widget/chat", async (route) => {
+    const body = route.request().postDataJSON() as ChatRequestBody;
+    requests.push(body);
+    const { status = 200, body: payload, delayMs = 0 } = answer(body, requests.length);
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
+  });
+  return requests;
+}
+
+export const errorBody = (code: string) => ({ error: { code, message: "server wording that must not be shown" } });
