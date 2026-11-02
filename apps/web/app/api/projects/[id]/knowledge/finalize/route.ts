@@ -8,6 +8,7 @@ import { createServiceClient } from "../../../../../../lib/supabase/service";
 import {
   KNOWLEDGE_BUCKET,
   SOURCE_COLUMNS,
+  STALE_UPLOAD_MS,
   loadOwnerContext,
   removeFiles,
   toSourceSummary,
@@ -35,13 +36,17 @@ export async function POST(request: Request, { params }: Context): Promise<NextR
 
     const db = createServiceClient();
 
-    // Claim the source once: only an `uploading` source can become `processing`, and only one request wins.
+    // Claim the source once: only a fresh `uploading` source can become `processing`, and only one request wins.
+    // "Fresh" is the same two-hour boundary the reserve function and the upload cleanup use: an older
+    // reservation is dead, and its file may be removed at any moment, so it can't be claimed.
+    const freshSince = new Date(Date.now() - STALE_UPLOAD_MS).toISOString();
     const claimed = await db
       .from("knowledge_sources")
       .update({ status: "processing" })
       .eq("id", sourceId)
       .eq("project_id", ctx.projectId)
       .eq("status", "uploading")
+      .gte("created_at", freshSince)
       .select(SOURCE_COLUMNS)
       .maybeSingle();
     if (claimed.error) throw new Error(`Could not claim the source: ${claimed.error.message}`);
@@ -51,15 +56,30 @@ export async function POST(request: Request, { params }: Context): Promise<NextR
     }
     const { storage_key: key, type } = { storage_key: source.storage_key, type: source.type };
 
-    /** A file we won't keep: remove it from Storage and drop its row (which frees the slot). */
+    /**
+     * A file we won't keep: remove it from Storage, then drop its row (which frees the slot). The row goes only
+     * after the file is gone, so a failed removal can't leave a file with no row; then the source is kept as
+     * `failed` and the owner can delete it, which removes the file.
+     */
     const refuse = async (code: "file_too_large" | "unsupported_file_type", message: string) => {
-      await removeFiles([key]);
-      await db.from("knowledge_sources").delete().eq("id", sourceId).eq("project_id", ctx.projectId);
+      if (!(await removeFiles([key]))) {
+        await markSourceFailed({ sourceId, projectId: ctx.projectId });
+        return apiError(code, message);
+      }
+      const deleted = await db.from("knowledge_sources").delete().eq("id", sourceId).eq("project_id", ctx.projectId);
+      if (deleted.error) throw new Error(`Could not delete a refused source: ${deleted.error.message}`);
       return apiError(code, message);
     };
-    /** Hand the claim back so the owner can upload the file and finalize again. */
-    const release = () =>
-      db.from("knowledge_sources").update({ status: "uploading" }).eq("id", sourceId).eq("project_id", ctx.projectId).eq("status", "processing");
+    /** Hand the claim back so the owner can upload the file and finalize again. A failed write is thrown, never ignored. */
+    const release = async () => {
+      const released = await db
+        .from("knowledge_sources")
+        .update({ status: "uploading" })
+        .eq("id", sourceId)
+        .eq("project_id", ctx.projectId)
+        .eq("status", "processing");
+      if (released.error) throw new Error(`Could not release the claim: ${released.error.message}`);
+    };
 
     try {
       const download = await db.storage.from(KNOWLEDGE_BUCKET).download(key);
@@ -101,7 +121,8 @@ export async function POST(request: Request, { params }: Context): Promise<NextR
       }
       return json<FinalizeKnowledgeResponse>({ source: toSourceSummary(source, status) });
     } catch (cause) {
-      // Anything unexpected after the claim must not leave the source stuck in `processing`.
+      // Anything unexpected after the claim: try to mark the source failed instead of leaving it in
+      // `processing`. That write is best effort (it can fail too), so the request still ends in a 500.
       await markSourceFailed({ sourceId, projectId: ctx.projectId });
       throw cause;
     }
