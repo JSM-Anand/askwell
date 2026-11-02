@@ -23,6 +23,55 @@ export type ProjectCardProps = {
 const formatDate = (iso: string) =>
   new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(iso));
 
+type RenameFormProps = {
+  project: ProjectSummary;
+  busy: boolean;
+  onRename: (name: string) => void;
+  onCancel: () => void;
+};
+
+/**
+ * Mounted only while a project is being renamed, so the draft starts from the
+ * saved name every time Rename is clicked and an abandoned edit never comes back.
+ */
+function RenameForm({ project, busy, onRename, onCancel }: RenameFormProps) {
+  const [draft, setDraft] = useState(project.name);
+  const trimmed = draft.trim();
+
+  return (
+    <form
+      className="flex flex-col gap-2 sm:flex-row"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (trimmed && trimmed !== project.name) onRename(trimmed);
+        else onCancel();
+      }}
+    >
+      <div className="min-w-0 flex-1">
+        <label htmlFor={`rename-${project.id}`} className="sr-only">
+          Project name
+        </label>
+        <Input
+          id={`rename-${project.id}`}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          maxLength={MAX_PROJECT_NAME_LENGTH}
+          autoFocus
+          autoComplete="off"
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={busy || !trimmed}>
+          Save
+        </Button>
+        <Button variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export function ProjectCard({
   project,
   editing,
@@ -35,42 +84,10 @@ export function ProjectCard({
   onCancelDelete,
   onConfirmDelete,
 }: ProjectCardProps) {
-  const [draft, setDraft] = useState(project.name);
-  const trimmed = draft.trim();
-
   return (
     <li className="flex min-w-0 flex-col gap-3 rounded-md border border-glass-border bg-surface-raised p-4">
       {editing ? (
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (trimmed && trimmed !== project.name) onRename(trimmed);
-            else onCancelEdit();
-          }}
-        >
-          <div className="min-w-0 flex-1">
-            <label htmlFor={`rename-${project.id}`} className="sr-only">
-              Project name
-            </label>
-            <Input
-              id={`rename-${project.id}`}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              maxLength={MAX_PROJECT_NAME_LENGTH}
-              autoFocus
-              autoComplete="off"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button type="submit" disabled={busy || !trimmed}>
-              Save
-            </Button>
-            <Button variant="secondary" onClick={onCancelEdit}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+        <RenameForm project={project} busy={busy} onRename={onRename} onCancel={onCancelEdit} />
       ) : (
         <h3 className="min-w-0 text-base font-semibold [overflow-wrap:anywhere]">{project.name}</h3>
       )}

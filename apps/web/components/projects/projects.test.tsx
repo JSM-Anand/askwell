@@ -62,6 +62,11 @@ describe("ProjectsList", () => {
     expect(html).toContain("Keep it");
   });
 
+  it("starts the rename field from the saved name, so an abandoned edit never comes back", () => {
+    const html = list({ projects: [project("a", "Docs bot")], editingId: "a" });
+    expect(html).toMatch(/id="rename-a"[^>]*value="Docs bot"|value="Docs bot"[^>]*id="rename-a"/);
+  });
+
   it("shows an inline rename field for the project being edited only", () => {
     const html = list({ projects: [project("a", "Docs bot"), project("b", "Other")], editingId: "a" });
     expect(html).toContain('id="rename-a"');

@@ -18,7 +18,8 @@ async function call<T>(url: string, init?: RequestInit): Promise<ClientResult<T>
       headers: init?.body ? { "Content-Type": "application/json" } : undefined,
     });
     const body: unknown = await res.json().catch(() => null);
-    if (res.ok) return { ok: true, data: body as T };
+    // A 2xx whose body isn't a JSON object (a proxy or an HTML page) is a failure, not an empty success.
+    if (res.ok && body !== null && typeof body === "object") return { ok: true, data: body as T };
 
     const error = (body as { error?: { code?: string; message?: string } } | null)?.error;
     return { ok: false, code: error?.code ?? "internal_error", message: error?.message ?? FALLBACK };

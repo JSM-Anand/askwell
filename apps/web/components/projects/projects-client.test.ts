@@ -55,6 +55,24 @@ describe("projects client", () => {
     expect(result).toMatchObject({ ok: false, code: "internal_error" });
   });
 
+  it.each([
+    ["a non-JSON body", null],
+    ["a JSON string", "ok"],
+    ["a JSON number", 5],
+  ])("treats a 200 with %s as a failure, not an empty success", async (_label, body) => {
+    reply(200, body);
+    await expect(listProjects()).resolves.toEqual({
+      ok: false,
+      code: "internal_error",
+      message: expect.any(String),
+    });
+  });
+
+  it("treats a 200 whose body can't be parsed as a failure", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected token <"); } });
+    await expect(createProject("x")).resolves.toMatchObject({ ok: false, code: "internal_error" });
+  });
+
   it("reports a network failure", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
     await expect(listProjects()).resolves.toMatchObject({ ok: false, code: "network" });
