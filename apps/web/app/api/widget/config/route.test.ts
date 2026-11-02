@@ -13,6 +13,11 @@ const { maybeSingle, eq, select, from } = vi.hoisted(() => {
 });
 vi.mock("../../../../lib/supabase/service", () => ({ createServiceClient: vi.fn(() => ({ from })) }));
 
+const { protectWidgetConfig } = vi.hoisted(() => ({
+  protectWidgetConfig: vi.fn(async (): Promise<{ allowed: true } | { allowed: false; reason: string }> => ({ allowed: true })),
+}));
+vi.mock("../../../../lib/security/arcjet", () => ({ protectWidgetConfig }));
+
 import { GET, OPTIONS } from "./route";
 
 const call = (query = "?key=pk_abc") => GET(new NextRequest(`http://localhost:3000/api/widget/config${query}`));
@@ -106,6 +111,29 @@ describe("GET /api/widget/config", () => {
     const body = await res.json();
     expect(body.error.code).toBe("internal_error");
     expect(JSON.stringify(body)).not.toContain("secret detail");
+  });
+
+  it("asks Arcjet about the public key from the query, before touching the database", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: proRow, error: null });
+    await call("?key=pk_xyz");
+    expect(protectWidgetConfig).toHaveBeenCalledTimes(1);
+    expect(protectWidgetConfig).toHaveBeenCalledWith(expect.any(NextRequest), "pk_xyz");
+  });
+
+  it("returns 429 rate_limited with the CORS headers when blocked, without any database work", async () => {
+    protectWidgetConfig.mockResolvedValueOnce({ allowed: false, reason: "rate_limited" });
+    const res = await call("?key=pk_busy");
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: { code: "rate_limited", message: expect.any(String) } });
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("does not spend rate limit on a request that fails validation", async () => {
+    await call("");
+    await call("?key=");
+    expect(protectWidgetConfig).not.toHaveBeenCalled();
   });
 
   it("allows any origin and disables caching on every response", async () => {

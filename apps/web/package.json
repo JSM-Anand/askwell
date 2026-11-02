@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "engines": {
-    "node": "24.x"
+    "node": ">=24.5.0 <25"
   },
   "scripts": {
     "dev": "pnpm --filter @askwell/widget build && mkdir -p public && cp ../widget/dist/widget.js public/widget.js && next dev",
