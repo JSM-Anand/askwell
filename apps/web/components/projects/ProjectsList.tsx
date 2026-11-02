@@ -1,10 +1,12 @@
-import type { ProjectSummary } from "@askwell/shared";
+import type { Plan, ProjectSummary } from "@askwell/shared";
 import { EmptyState } from "../ui/EmptyState";
 import { ProjectCard } from "./ProjectCard";
 import type { ProjectCardProps } from "./ProjectCard";
 
 export type ProjectsListProps = {
   projects: ProjectSummary[];
+  plan: Plan;
+  now?: Date;
   editingId: string | null;
   confirmingId: string | null;
   busyId?: string | null;
@@ -18,7 +20,7 @@ export type ProjectsListProps = {
   };
 };
 
-export function ProjectsList({ projects, editingId, confirmingId, busyId = null, handlers }: ProjectsListProps) {
+export function ProjectsList({ projects, plan, now, editingId, confirmingId, busyId = null, handlers }: ProjectsListProps) {
   if (projects.length === 0) {
     return (
       <EmptyState
@@ -33,6 +35,8 @@ export function ProjectsList({ projects, editingId, confirmingId, busyId = null,
       {projects.map((project) => {
         const props: ProjectCardProps = {
           project,
+          plan,
+          now,
           editing: editingId === project.id,
           confirmingDelete: confirmingId === project.id,
           busy: busyId === project.id,

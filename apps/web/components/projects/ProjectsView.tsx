@@ -100,6 +100,7 @@ export function ProjectsView() {
             ) : null}
             <ProjectsList
               projects={state.projects}
+              plan={state.plan}
               editingId={state.editingId}
               confirmingId={state.confirmingId}
               busyId={busyId}
