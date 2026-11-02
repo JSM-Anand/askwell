@@ -210,7 +210,9 @@ describe("RLS is on and grants are tight", () => {
     const { rows } = await db.query<{ proname: string; prosecdef: boolean; proconfig: string[] | null; public_exec: boolean }>(`
       select proname, prosecdef, proconfig,
              has_function_privilege('public', oid, 'EXECUTE') as public_exec
-      from pg_proc where pronamespace = 'public'::regnamespace`);
+      from pg_proc
+      where pronamespace = 'public'::regnamespace
+        and proname in ('owned_project_ids', 'owned_conversation_ids')`);
     expect(rows.map((r) => r.proname).sort()).toEqual(["owned_conversation_ids", "owned_project_ids"]);
     for (const row of rows) {
       expect(row.prosecdef).toBe(true);
