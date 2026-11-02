@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ERROR_STATUS, widgetConfigQuerySchema } from "@askwell/shared";
 import type { ApiError, ErrorCode, WidgetConfigResponse } from "@askwell/shared";
+import { protectWidgetConfig } from "../../../../lib/security/arcjet";
 import { getPublicConfig } from "../../../../lib/widget-config/get-public-config";
 
 // Public route: any origin may call it. A config change must show on reload, so nothing is cached.
@@ -21,6 +22,12 @@ export async function GET(request: NextRequest) {
   const query = widgetConfigQuerySchema.safeParse({ key: request.nextUrl.searchParams.get("key") });
   if (!query.success) {
     return error("invalid_input", "A project key is required.");
+  }
+
+  // Before any database work. Blocked requests still get the CORS headers, so the widget can read the 429.
+  const protection = await protectWidgetConfig(request, query.data.key);
+  if (!protection.allowed) {
+    return error("rate_limited", "Too many requests. Try again in a minute.");
   }
 
   try {
