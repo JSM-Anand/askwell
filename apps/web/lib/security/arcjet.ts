@@ -10,8 +10,26 @@ export type ProtectResult =
 export const WIDGET_CONFIG_LIMIT = { window: "1m", max: 60 } as const;
 export const CHAT_LIMIT = { window: "1m", max: 20 } as const;
 
-// `routeKey` is passed on every call as `<route>:<public key>`; `ip.src` is read from the request.
-const CHARACTERISTICS = ["ip.src", "routeKey"] as const;
+/**
+ * A second limit per route + IP only. The limits above count per public key, and the key is
+ * caller-chosen: sending a different key on every request would start a fresh counter each time and
+ * reach the database unthrottled. These caps stop that. They are not in project.md; they are set
+ * above the per-key limits (5x each) so several widgets behind one office IP still fit. The route is
+ * part of the key so config traffic doesn't use up the chat budget.
+ *
+ * Arcjet's counters are eventually consistent: a burst of concurrent requests can be over-admitted
+ * (measured against the real service with a limit of 12: 20 to 23 of 40 requests got through at
+ * concurrency 10 to 25), and requests are blocked once the count catches up. Sequential traffic is
+ * enforced exactly (the 301st request in a minute is the first one denied). So these are throttles,
+ * not exact quotas; the monthly message quota in Postgres is the exact limit.
+ */
+export const WIDGET_CONFIG_IP_LIMIT = { window: "1m", max: 300 } as const;
+export const CHAT_IP_LIMIT = { window: "1m", max: 100 } as const;
+
+// `routeKey` is passed on every call as `<route>:<public key>` and `route` as `<route>`; `ip.src` is
+// read from the request.
+const PER_KEY = ["ip.src", "routeKey"] as const;
+const PER_IP = ["ip.src", "route"] as const;
 
 type Route = "widget_config" | "chat";
 
@@ -22,13 +40,15 @@ function createClients() {
   const key = process.env.ARCJET_KEY;
   if (!key) throw new Error("ARCJET_KEY is not set");
 
-  const base = arcjet({ key, characteristics: CHARACTERISTICS, rules: [] });
+  const base = arcjet({ key, characteristics: PER_KEY, rules: [] });
   return {
-    widgetConfig: base.withRule(
-      fixedWindow({ mode: "LIVE", ...WIDGET_CONFIG_LIMIT, characteristics: CHARACTERISTICS }),
-    ),
+    widgetConfig: base.withRule([
+      ...fixedWindow({ mode: "LIVE", ...WIDGET_CONFIG_LIMIT, characteristics: PER_KEY }),
+      ...fixedWindow({ mode: "LIVE", ...WIDGET_CONFIG_IP_LIMIT, characteristics: PER_IP }),
+    ]),
     chat: base.withRule([
-      ...fixedWindow({ mode: "LIVE", ...CHAT_LIMIT, characteristics: CHARACTERISTICS }),
+      ...fixedWindow({ mode: "LIVE", ...CHAT_LIMIT, characteristics: PER_KEY }),
+      ...fixedWindow({ mode: "LIVE", ...CHAT_IP_LIMIT, characteristics: PER_IP }),
       ...detectPromptInjection({ mode: "LIVE" }),
     ]),
   };
@@ -57,21 +77,25 @@ function failOpen(route: Route, error: unknown): ProtectResult {
   return ALLOWED;
 }
 
-/** GET /api/widget/config: 60 requests a minute per public key + IP. */
+/** GET /api/widget/config: 60 requests a minute per public key + IP, and 300 per IP whatever the key. */
 export async function protectWidgetConfig(req: NextRequest, publicKey: string): Promise<ProtectResult> {
   try {
-    const decision = await getClients().widgetConfig.protect(req, { routeKey: `widget_config:${publicKey}` });
+    const decision = await getClients().widgetConfig.protect(req, {
+      routeKey: `widget_config:${publicKey}`,
+      route: "widget_config",
+    });
     return toResult("widget_config", decision);
   } catch (error) {
     return failOpen("widget_config", error);
   }
 }
 
-/** POST /api/widget/chat: 20 messages a minute per public key + IP, and prompt-injection detection on the message. */
+/** POST /api/widget/chat: 20 messages a minute per public key + IP, 100 per IP whatever the key, and prompt-injection detection on the message. */
 export async function protectChat(req: NextRequest, publicKey: string, message: string): Promise<ProtectResult> {
   try {
     const decision = await getClients().chat.protect(req, {
       routeKey: `chat:${publicKey}`,
+      route: "chat",
       detectPromptInjectionMessage: message,
     });
     const result = toResult("chat", decision);
