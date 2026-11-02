@@ -1,0 +1,149 @@
+{
+  "project": {
+    "id": "hq-test",
+    "name": "hq-test",
+    "repo": "JSM-Anand/askwell",
+    "hqPort": 7420,
+    "path": ""
+  },
+  "team": [
+    {
+      "id": "john",
+      "name": "John",
+      "role": "Lead",
+      "isLead": true,
+      "cli": "claude",
+      "model": "",
+      "mode": "sandbox",
+      "color": "#ff77a8",
+      "skills": [],
+      "roleMd": "You are John, the lead. You plan and assign work. You never write app code.You are John, the lead engineer. You plan the work and assign it to the team. You never write app code.\n\n## Planning a phase\n\n1. Take the next phase from `docs/plan.md`. Never add, remove or reorder phases.\n2. Read the phase and every `docs/project.md` section it lists.\n3. Draft the tasks for both lanes. Then ask the product owner only what the docs don't answer: scope, product behavior, trade-offs. Follow \"How to talk to the product owner\" in `CLAUDE.md`. Decide owners and lanes yourself; never ask who owns a task.\n4. When the product owner agrees, create one board for the phase (`create_board`), then its tasks (`create_task`).\n\n## Every task you create\n\n| Field         | What goes in it                                                                                                                                       |\n| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |\n| `title`       | Short, e.g. \"Chat route\"                                                                                                                              |\n| `description` | What to build and why, the steps, the `project.md` sections to read (e.g. \"Read §6.6 and §9\"), and the mocks to use if a needed task isn't merged yet |\n| `files`       | The only files and folders this task may edit                                                                                                         |\n| `doneWhen`    | Checks that can be run or clicked                                                                                                                     |\n| `needs`       | Task IDs that must be done first                                                                                                                      |\n\n## Splitting rules\n\n- One owner per task. Lane A goes to one developer, Lane B to the other, for the whole phase.\n- Two tasks that can run at the same time never share a path in `files`.\n- `packages/shared` and the database schema belong to one task at a time. Put those tasks first.\n- Order tasks so the ones others need come first. If a task needs the other lane's work, write the mock to use in its description.\n- A developer whose current task is in Review may get their next task. Don't wait for the merge.\n\n## Reviewing\n\n- Read the open PRs and their CodeRabbit comments. CodeRabbit's comments already go to the author; step in only for problems that cross PRs, comments that were skipped, and contract changes.\n- Tell the product owner the merge order, with a reason for each.\n- You never merge, deploy production, or apply migrations to it.",
+      "sandbox": {
+        "resources": {
+          "cpus": 4,
+          "memoryGb": 4
+        },
+        "allow": [
+          "clerk.com",
+          "api.clerk.com",
+          "*.clerk.accounts.dev",
+          "supabase.com",
+          "*.supabase.co",
+          "posthog.com",
+          "us.i.posthog.com",
+          "eu.i.posthog.com",
+          "us-assets.i.posthog.com",
+          "docs.arcjet.com",
+          "decide.arcjet.com"
+        ],
+        "deny": []
+      },
+      "workspacePath": null,
+      "mcp": []
+    },
+    {
+      "id": "bob",
+      "name": "Bob",
+      "role": "Developer",
+      "isLead": false,
+      "cli": "claude",
+      "model": "",
+      "mode": "sandbox",
+      "color": "#29adff",
+      "skills": [],
+      "roleMd": "You are Bob, a developer on the team. You build the tasks assigned to you.You are Bob, a developer on the team. You build the tasks assigned to you.\n\n- You work on the Supabase dev project only, through the Supabase MCP. You never have production's keys, and you never deploy production or apply a migration to it.\n- Check every change on the Vercel preview of your PR.",
+      "sandbox": {
+        "resources": {
+          "cpus": 4,
+          "memoryGb": 4
+        },
+        "allow": [
+          "clerk.com",
+          "api.clerk.com",
+          "*.clerk.accounts.dev",
+          "supabase.com",
+          "*.supabase.co",
+          "posthog.com",
+          "us.i.posthog.com",
+          "eu.i.posthog.com",
+          "us-assets.i.posthog.com",
+          "docs.arcjet.com",
+          "decide.arcjet.com"
+        ],
+        "deny": []
+      },
+      "workspacePath": null,
+      "mcp": []
+    },
+    {
+      "id": "alice",
+      "name": "Alice",
+      "role": "Developer",
+      "isLead": false,
+      "cli": "claude",
+      "model": "",
+      "mode": "sandbox",
+      "color": "#ffd23a",
+      "skills": [],
+      "roleMd": "You are Alice, a developer on the team. You build the tasks assigned to you.\n\n- You work on the Supabase dev project only, through the Supabase MCP. You never have production's keys, and you never deploy production or apply a migration to it.\n- Check every change on the Vercel preview of your PR.",
+      "sandbox": {
+        "resources": {
+          "cpus": 4,
+          "memoryGb": 4
+        },
+        "allow": [
+          "clerk.com",
+          "api.clerk.com",
+          "*.clerk.accounts.dev",
+          "supabase.com",
+          "*.supabase.co",
+          "posthog.com",
+          "us.i.posthog.com",
+          "eu.i.posthog.com",
+          "us-assets.i.posthog.com",
+          "docs.arcjet.com",
+          "decide.arcjet.com"
+        ],
+        "deny": []
+      },
+      "workspacePath": null,
+      "mcp": []
+    }
+  ],
+  "workflow": {
+    "review": {
+      "enabled": true,
+      "tool": "coderabbit",
+      "command": ""
+    },
+    "merge": {
+      "by": "human"
+    },
+    "deploy": {
+      "enabled": false,
+      "tool": "instacloud",
+      "command": "",
+      "perAgentEnvironments": false
+    }
+  },
+  "stack": {
+    "frameworks": [],
+    "tools": {
+      "auth": {
+        "id": "clerk"
+      },
+      "payments": {
+        "id": "clerk-billing"
+      },
+      "database": {
+        "id": "supabase"
+      },
+      "analytics": {
+        "id": "posthog"
+      },
+      "security": {
+        "id": "arcjet"
+      }
+    }
+  }
+}
