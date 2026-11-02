@@ -2,12 +2,17 @@
 
 import { useState } from "react";
 import { MAX_PROJECT_NAME_LENGTH } from "@askwell/shared";
-import type { ProjectSummary } from "@askwell/shared";
+import type { Plan, ProjectSummary } from "@askwell/shared";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { UsageMeter } from "./UsageMeter";
 
 export type ProjectCardProps = {
   project: ProjectSummary;
+  /** The owner's plan from the server; it sets the usage limit. */
+  plan: Plan;
+  /** The current time, so every card agrees on whether a period has rolled over. */
+  now?: Date;
   editing: boolean;
   confirmingDelete: boolean;
   busy?: boolean;
@@ -74,6 +79,8 @@ function RenameForm({ project, busy, onRename, onCancel }: RenameFormProps) {
 
 export function ProjectCard({
   project,
+  plan,
+  now,
   editing,
   confirmingDelete,
   busy = false,
@@ -106,6 +113,8 @@ export function ProjectCard({
           </dd>
         </div>
       </dl>
+
+      <UsageMeter messagesUsed={project.messagesUsed} periodStart={project.periodStart} plan={plan} now={now} />
 
       {confirmingDelete ? (
         <div role="alertdialog" aria-label={`Delete ${project.name}`} className="flex flex-col gap-2 rounded-md border border-danger bg-danger-soft p-3">

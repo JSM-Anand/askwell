@@ -14,6 +14,7 @@ const project = (id: string, name: string): ProjectSummary => ({
   createdAt: "2026-11-02T10:00:00Z",
 });
 
+const NOW = new Date("2026-11-10T12:00:00Z");
 const noop = vi.fn();
 const handlers = {
   onStartEdit: noop, onCancelEdit: noop, onRename: noop,
@@ -21,7 +22,7 @@ const handlers = {
 };
 const list = (props: Partial<Parameters<typeof ProjectsList>[0]> = {}) =>
   renderToStaticMarkup(
-    <ProjectsList projects={[]} editingId={null} confirmingId={null} handlers={handlers} {...props} />,
+    <ProjectsList projects={[]} plan="free" now={NOW} editingId={null} confirmingId={null} handlers={handlers} {...props} />,
   );
 
 describe("ProjectsList", () => {
@@ -39,6 +40,22 @@ describe("ProjectsList", () => {
     const html = list({ projects: [project("a", "<img src=x onerror=alert(1)>")] });
     expect(html).not.toContain("<img");
     expect(html).toContain("&lt;img");
+  });
+
+  it("shows each project's usage on its card, against the plan's limit", () => {
+    const html = list({
+      projects: [{ ...project("a", "Docs bot"), messagesUsed: 42, periodStart: "2026-11-03T14:30:00Z" }],
+    });
+    expect(html).toContain("42");
+    expect(html).toContain("/");
+    expect(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).toContain("42 / 100 messages this month · resets 3 Dec");
+  });
+
+  it("uses the Pro limit for a Pro plan, and a card at the limit shows the message", () => {
+    const pro = list({ plan: "pro", projects: [{ ...project("a", "A"), messagesUsed: 1500, periodStart: "2026-11-03T14:30:00Z" }] });
+    expect(pro.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).toContain("1,500 / 2,000 messages this month");
+    const full = list({ projects: [{ ...project("b", "B"), messagesUsed: 100, periodStart: "2026-11-03T14:30:00Z" }] });
+    expect(full).toContain("Limit reached: the widget is showing visitors the quota message.");
   });
 
   it("shows the empty state when there are no projects", () => {
