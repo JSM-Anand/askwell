@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Widget demo host page</title>
+    <style>
+      /* Loud global styles: the widget's shadow root must not pick any of them up. */
+      body { font-family: Georgia, serif; background: #fffbe6; color: #333; margin: 2rem; }
+      button { background: hotpink; color: white; border: 4px dashed purple; font-size: 24px; }
+      i { color: red; font-size: 40px; }
+      iframe { border: 10px solid red; }
+    </style>
+  </head>
+  <body>
+    <h1>Host page on :8080</h1>
+    <p>This page stands in for a customer's site. Its own styles should stay exactly as they are.</p>
+    <button type="button">A host page button</button>
+
+    <!-- Pasted install snippet. Change data-key to a real public key (pk_...) from your project. -->
+    <script src="http://localhost:3000/widget.js" data-key="pk_demo"></script>
+  </body>
+</html>
