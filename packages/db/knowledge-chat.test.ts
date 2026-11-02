@@ -295,6 +295,8 @@ describe("save_chat_turn", () => {
 
   it("appends to an existing conversation of the same project", async () => {
     const id = await save(P_CHAT_A, null, "visitor_2", "one", "reply one");
+    // pglite's clock ticks in milliseconds; real Postgres has microseconds and turns are far apart.
+    await new Promise((resolve) => setTimeout(resolve, 5));
     expect(await save(P_CHAT_A, id, "visitor_2", "two", "reply two")).toBe(id);
     expect((await messages(id)).map((m) => m.body)).toEqual(["one", "reply one", "two", "reply two"]);
     expect(await count("select count(*)::int as n from conversations where id = $1", [id])).toBe(1);
@@ -458,5 +460,44 @@ describe("access", () => {
     expect(await count("select count(*)::int as n from knowledge_sources")).toBe(sources);
     expect((await usage(P1)).messages_used).toBe(used);
     expect(await count("select count(*)::int as n from conversations")).toBe(conversations);
+  });
+});
+
+describe("match_chunks with a crowded index", () => {
+  // The HNSW index spans every project. By default Postgres takes the nearest hnsw.ef_search (40)
+  // chunks of ALL projects and only then filters by project, so a small project can get fewer than
+  // p_count rows while a big project's chunks crowd the top. match_chunks sets
+  // hnsw.iterative_scan = 'relaxed_order' (pgvector 0.8+; dev runs 0.8.2) so the scan continues
+  // until the filter has produced enough rows.
+  //
+  // pglite's pgvector build (0.8.7) cannot show this. The settings are accepted (current_setting
+  // reports them) but do not change the scan: with 3,000 random vectors and a ~2% filter, the
+  // HNSW scan reads about 330 tuples whether hnsw.ef_search is 40 or 1000 and whether
+  // hnsw.iterative_scan is off, strict_order or relaxed_order. So the behavior is checked on a real
+  // database, not here; what pglite can check is how the function is built.
+  it.todo("a small project still gets its p_count chunks when another project holds many closer ones (needs real Postgres + pgvector 0.8)");
+
+  it("is configured for iterative scans and re-sorts the nearest rows exactly", async () => {
+    const { proconfig } = await one<{ proconfig: string[] }>(
+      "select proconfig from pg_proc where proname = 'match_chunks'",
+    );
+    expect(proconfig).toContain("hnsw.iterative_scan=relaxed_order");
+    // relaxed_order can return rows slightly out of order. pgvector's README (v0.8.2) gives the recipe:
+    // a materialized inner query (order by distance, limit) and an outer order by distance + 0.
+    const { src } = await one<{ src: string }>(
+      "select pg_get_functiondef('public.match_chunks(uuid,extensions.vector,integer)'::regprocedure) as src",
+    );
+    expect(src).toMatch(/with nearest as materialized/);
+    expect(src).toMatch(/order by c\.embedding operator\(extensions\.<=>\) p_embedding\s+limit p_count/);
+    expect(src).toMatch(/order by n\.distance \+ 0/);
+  });
+
+  it("filters by project and ready status inside the nearest-rows query, so the limit applies to the right rows", async () => {
+    const { src } = await one<{ src: string }>(
+      "select pg_get_functiondef('public.match_chunks(uuid,extensions.vector,integer)'::regprocedure) as src",
+    );
+    const inner = src.slice(src.indexOf("with nearest as materialized"), src.indexOf("order by n.distance"));
+    expect(inner).toMatch(/c\.project_id = p_project_id/);
+    expect(inner).toMatch(/s\.status = 'ready'/);
   });
 });
