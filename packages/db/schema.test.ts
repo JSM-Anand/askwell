@@ -119,6 +119,21 @@ describe("migration", () => {
     expect(rows).toEqual([]);
   });
 
+  it("makes a chunk's project match its source's project", async () => {
+    // S_A belongs to P_A. A chunk under P_B pointing at S_A must be refused.
+    await expect(
+      execAs(db, SERVICE, "insert into knowledge_chunks (project_id, source_id, content, embedding) values ($1, $2, 'x', $3)", [P_B, S_A, vec(0.5)]),
+    ).rejects.toThrow(/foreign key/);
+    await expect(
+      execAs(db, SERVICE, "update knowledge_chunks set project_id = $1 where source_id = $2", [P_B, S_A]),
+    ).rejects.toThrow(/foreign key/);
+    // The matching project is accepted.
+    expect(
+      await execAs(db, SERVICE, "insert into knowledge_chunks (project_id, source_id, content, embedding) values ($1, $2, 'ok', $3)", [P_A, S_A, vec(0.5)]),
+    ).toBe(1);
+    await execAs(db, SERVICE, "delete from knowledge_chunks where content = 'ok'");
+  });
+
   it("defaults messages_used to 0 and requires a unique public_key", async () => {
     const rows = await queryAs<{ messages_used: number }>(db, SERVICE, "select messages_used from projects where id = $1", [P_A]);
     expect(rows[0]?.messages_used).toBe(0);

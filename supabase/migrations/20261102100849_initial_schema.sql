@@ -40,15 +40,19 @@ create table public.knowledge_sources (
   storage_key text,
   status text not null default 'uploading'
     check (status in ('uploading', 'processing', 'ready', 'failed')),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Target of the composite FK below: a chunk's project must be its source's project.
+  unique (id, project_id)
 );
 
 create table public.knowledge_chunks (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects (id) on delete cascade,
-  source_id uuid not null references public.knowledge_sources (id) on delete cascade,
+  source_id uuid not null,
   content text not null,
-  embedding extensions.vector(1536) not null
+  embedding extensions.vector(1536) not null,
+  foreign key (source_id, project_id)
+    references public.knowledge_sources (id, project_id) on delete cascade
 );
 
 create table public.conversations (

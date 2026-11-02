@@ -92,11 +92,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "knowledge_chunks_source_id_fkey"
-            columns: ["source_id"]
+            foreignKeyName: "knowledge_chunks_source_id_project_id_fkey"
+            columns: ["source_id", "project_id"]
             isOneToOne: false
             referencedRelation: "knowledge_sources"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "project_id"]
           },
         ]
       }
