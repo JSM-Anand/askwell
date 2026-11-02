@@ -52,8 +52,10 @@ beforeEach(() => {
   mocks.protectWidgetConfig.mockReset().mockResolvedValue(allow());
   mocks.protectChat.mockReset().mockResolvedValue(allow());
   mocks.arcjet.mockReset().mockImplementation(() => ({
-    // The config client gets one rule, the chat client gets two.
-    withRule: (rules: unknown[]) => ({ protect: rules.length === 1 ? mocks.protectWidgetConfig : mocks.protectChat }),
+    // Only the chat client has the prompt-injection rule.
+    withRule: (rules: { rule: string }[]) => ({
+      protect: rules.some((r) => r.rule === "detectPromptInjection") ? mocks.protectChat : mocks.protectWidgetConfig,
+    }),
   }));
   mocks.fixedWindow.mockClear();
   mocks.detectPromptInjection.mockClear();
@@ -69,7 +71,7 @@ describe("protectWidgetConfig", () => {
     const { protectWidgetConfig } = await load();
     const request = req();
     expect(await protectWidgetConfig(request, "pk_a")).toEqual({ allowed: true });
-    expect(mocks.protectWidgetConfig).toHaveBeenCalledWith(request, { routeKey: "widget_config:pk_a" });
+    expect(mocks.protectWidgetConfig).toHaveBeenCalledWith(request, { routeKey: "widget_config:pk_a", route: "widget_config" });
   });
 
   it("blocks a rate-limited request as rate_limited", async () => {
@@ -86,6 +88,7 @@ describe("protectChat", () => {
     expect(await protectChat(request, "pk_a", "What are your hours?")).toEqual({ allowed: true });
     expect(mocks.protectChat).toHaveBeenCalledWith(request, {
       routeKey: "chat:pk_a",
+      route: "chat",
       detectPromptInjectionMessage: "What are your hours?",
     });
   });
@@ -113,7 +116,7 @@ describe("protectChat", () => {
 });
 
 describe("rules", () => {
-  it("builds one client from ARCJET_KEY, once, with live fixed windows of 60 and 20 a minute", async () => {
+  it("builds one client from ARCJET_KEY, once", async () => {
     const { protectWidgetConfig, protectChat } = await load();
     await protectWidgetConfig(req(), "pk_a");
     await protectChat(req(), "pk_a", "hi");
@@ -121,14 +124,35 @@ describe("rules", () => {
 
     expect(mocks.arcjet).toHaveBeenCalledTimes(1);
     expect(mocks.arcjet.mock.calls[0]?.[0]).toMatchObject({ key: "ajkey_test", characteristics: ["ip.src", "routeKey"] });
-
-    const windows = mocks.fixedWindow.mock.calls.map((c) => c[0]);
-    expect(windows).toEqual([
-      { mode: "LIVE", window: "1m", max: 60, characteristics: ["ip.src", "routeKey"] },
-      { mode: "LIVE", window: "1m", max: 20, characteristics: ["ip.src", "routeKey"] },
-    ]);
     expect(mocks.detectPromptInjection).toHaveBeenCalledTimes(1);
     expect(mocks.detectPromptInjection).toHaveBeenCalledWith({ mode: "LIVE" });
+  });
+
+  it("limits each route per public key + IP (60 and 20 a minute) and per IP alone (300 and 100), all live", async () => {
+    const { protectWidgetConfig } = await load();
+    await protectWidgetConfig(req(), "pk_a");
+
+    expect(mocks.fixedWindow.mock.calls.map((c) => c[0])).toEqual([
+      { mode: "LIVE", window: "1m", max: 60, characteristics: ["ip.src", "routeKey"] },
+      { mode: "LIVE", window: "1m", max: 300, characteristics: ["ip.src", "route"] },
+      { mode: "LIVE", window: "1m", max: 20, characteristics: ["ip.src", "routeKey"] },
+      { mode: "LIVE", window: "1m", max: 100, characteristics: ["ip.src", "route"] },
+    ]);
+  });
+
+  it("keeps the per-IP limits above the per-key limits, so one office IP running several widgets still fits", async () => {
+    const { WIDGET_CONFIG_LIMIT, WIDGET_CONFIG_IP_LIMIT, CHAT_LIMIT, CHAT_IP_LIMIT } = await load();
+    expect(WIDGET_CONFIG_IP_LIMIT.max).toBeGreaterThan(WIDGET_CONFIG_LIMIT.max);
+    expect(CHAT_IP_LIMIT.max).toBeGreaterThan(CHAT_LIMIT.max);
+  });
+
+  it("counts a changed public key against the same per-IP limit (the route name, not the key, scopes it)", async () => {
+    const { protectWidgetConfig } = await load();
+    await protectWidgetConfig(req(), "pk_one");
+    await protectWidgetConfig(req(), "pk_two");
+    const props = mocks.protectWidgetConfig.mock.calls.map((c) => c[1]);
+    expect(props.map((p) => p.route)).toEqual(["widget_config", "widget_config"]);
+    expect(props.map((p) => p.routeKey)).toEqual(["widget_config:pk_one", "widget_config:pk_two"]);
   });
 });
 
