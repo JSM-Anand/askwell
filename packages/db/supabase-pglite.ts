@@ -16,7 +16,8 @@ export type RoleContext = {
 const MIGRATIONS_DIR = fileURLToPath(new URL("../../supabase/migrations/", import.meta.url));
 
 // What a Supabase project has before our migrations run: the three API roles,
-// auth.jwt(), the extensions schema, and default privileges that give every API
+// auth.jwt(), the extensions schema, a stub of Storage's buckets table (pglite has
+// no storage schema), and default privileges that give every API
 // role ALL on new public tables and functions. Tests prove the migration takes
 // those back.
 const SUPABASE_STUB = `
@@ -26,6 +27,16 @@ const SUPABASE_STUB = `
 
   create schema extensions;
   create schema auth;
+
+  -- Only the part of Supabase Storage our migrations touch: the buckets table.
+  create schema storage;
+  create table storage.buckets (
+    id text primary key,
+    name text not null,
+    public boolean not null default false,
+    file_size_limit bigint,
+    allowed_mime_types text[]
+  );
 
   create function auth.jwt() returns jsonb
   language sql stable
