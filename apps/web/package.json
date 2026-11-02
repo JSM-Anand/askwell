@@ -6,11 +6,11 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "pnpm --filter @askwell/widget build && mkdir -p public && cp ../widget/dist/widget.js public/widget.js && next dev",
+    "build": "pnpm --filter @askwell/widget build && mkdir -p public && cp ../widget/dist/widget.js public/widget.js && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --ignore-pattern public/widget.js",
     "test": "vitest run"
   },
   "dependencies": {
@@ -25,6 +25,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@askwell/widget": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
