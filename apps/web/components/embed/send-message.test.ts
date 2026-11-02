@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { CHAT_ERRORS, sendChatMessage } from "./send-message";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CHAT_ERRORS, CHAT_TIMEOUT_MS, sendChatMessage } from "./send-message";
 
 const CONVERSATION = "2f0d4c6e-3b1a-4c1e-9d3b-5a6f7e8d9c10";
 const input = { key: "pk_a", visitorId: "visitor_1", message: "When do you open?" };
@@ -81,5 +81,52 @@ describe("sendChatMessage: each error shows its friendly message, never the serv
     ["a 200 with no body", reply(200, "")],
   ])("%s is the generic message", async (_name, getJson) => {
     await expect(sendChatMessage(input, getJson)).resolves.toEqual({ ok: false, message: CHAT_ERRORS.generic });
+  });
+});
+
+describe("sendChatMessage: a request that never settles", () => {
+  afterEach(() => vi.useRealTimers());
+
+  /** A fetch that only ends when its signal aborts, like a real one whose server never answers. */
+  const hanging = () =>
+    vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    ) as unknown as typeof fetch;
+
+  it("passes an abort signal to the request", async () => {
+    const getJson = reply(200, { conversationId: CONVERSATION, reply: "ok" });
+    await sendChatMessage(input, getJson);
+    const [, init] = vi.mocked(getJson).mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("gives up after CHAT_TIMEOUT_MS with the generic message, so the panel can stop waiting", async () => {
+    vi.useFakeTimers();
+    const getJson = hanging();
+    const result = sendChatMessage(input, getJson);
+
+    await vi.advanceTimersByTimeAsync(CHAT_TIMEOUT_MS - 1);
+    let settled = false;
+    void result.then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(result).resolves.toEqual({ ok: false, message: CHAT_ERRORS.generic });
+  });
+
+  it("waits longer than a slow answer (a minute) before giving up", () => {
+    expect(CHAT_TIMEOUT_MS).toBeGreaterThan(60_000);
+  });
+
+  it("cancels the timer once the answer is in, so nothing is left pending", async () => {
+    vi.useFakeTimers();
+    await sendChatMessage(input, reply(200, { conversationId: CONVERSATION, reply: "ok" }));
+    expect(vi.getTimerCount()).toBe(0);
+    await sendChatMessage(input, error(500, "internal_error"));
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

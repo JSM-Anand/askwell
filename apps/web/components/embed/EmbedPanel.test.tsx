@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WIDGET_CONFIG } from "@askwell/shared";
@@ -48,7 +48,13 @@ async function openPanel(projectKey: string | undefined = "pk_a") {
     await user.type(input, text);
     await user.keyboard("{Enter}");
   };
-  return { user, input, ask };
+  // What a browser ends up with when the focused input is disabled while a reply is on its way: focus on the body.
+  const submitUnfocused = async (text: string) => {
+    await user.type(input, text);
+    (input as HTMLInputElement).blur();
+    fireEvent.submit(input.closest("form")!);
+  };
+  return { user, input, ask, submitUnfocused };
 }
 
 describe("the panel talks to the real chat route", () => {
@@ -120,6 +126,47 @@ describe("the panel talks to the real chat route", () => {
 
     expect(screen.getByText("<i>question</i>")).toBeTruthy();
     expect(document.querySelector("b, i, img")).toBeNull();
+  });
+});
+
+describe("focus", () => {
+  it("returns to the input after a reply, since disabling it while waiting drops the focus", async () => {
+    let release: (r: Response) => void = () => {};
+    answerWith(() => new Promise<Response>((resolve) => (release = resolve)));
+    const { input, submitUnfocused } = await openPanel();
+    await submitUnfocused("hello");
+    await screen.findByRole("status");
+    expect(document.activeElement).toBe(document.body);
+
+    release(json(200, { conversationId: CONVERSATION, reply: "hi there" }));
+    await screen.findByText("hi there");
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  });
+
+  it("returns to the input after an error notice too", async () => {
+    let release: (r: Response) => void = () => {};
+    answerWith(() => new Promise<Response>((resolve) => (release = resolve)));
+    const { input, submitUnfocused } = await openPanel();
+    await submitUnfocused("hello");
+    await screen.findByRole("status");
+
+    release(chatError(500, "internal_error"));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  });
+
+  it("doesn't take the focus back from another control the visitor moved to while waiting", async () => {
+    let release: (r: Response) => void = () => {};
+    answerWith(() => new Promise<Response>((resolve) => (release = resolve)));
+    const { ask } = await openPanel();
+    await ask("hello");
+    await screen.findByRole("status");
+
+    const close = screen.getByRole("button", { name: "Close chat" });
+    close.focus();
+    release(json(200, { conversationId: CONVERSATION, reply: "hi there" }));
+    await screen.findByText("hi there");
+    expect(document.activeElement).toBe(close);
   });
 });
 

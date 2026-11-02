@@ -9,6 +9,13 @@ export const CHAT_ERRORS = {
   generic: "Something went wrong. Try again.",
 } as const;
 
+/**
+ * How long to wait for the route. The route itself gives up on the AI provider well before this (each
+ * provider call has its own 60 s limit and a failed one is retried once), so a request still open after
+ * this is never going to answer. Without a limit the panel would stay "typing" with the input disabled.
+ */
+export const CHAT_TIMEOUT_MS = 90_000;
+
 export type SendResult = { ok: true; conversationId: string; reply: string } | { ok: false; message: string };
 
 const isChatResponse = (data: unknown): data is ChatResponse =>
@@ -32,15 +39,19 @@ function friendlyMessage(status: number, code: unknown): string {
 /**
  * Sends one visitor message to POST /api/widget/chat (same origin) and returns the reply and the
  * conversation id to send with the next message, or a friendly message to show instead.
- * It never throws: a network failure or an odd response is just the generic message.
+ * It never throws: a network failure, a timeout or an odd response is just the generic message.
  */
 export async function sendChatMessage(
   input: ChatRequest,
   getJson: typeof fetch = (url, init) => fetch(url, init),
 ): Promise<SendResult> {
+  // AbortController + setTimeout rather than AbortSignal.timeout, which older embedding browsers lack.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
   try {
     const response = await getJson("/api/widget/chat", {
       method: "POST",
+      signal: controller.signal,
       headers: { "content-type": "application/json" },
       // An undefined conversationId is left out of the JSON: the first message starts a conversation.
       body: JSON.stringify({
@@ -56,6 +67,8 @@ export async function sendChatMessage(
     }
     return { ok: false, message: friendlyMessage(response.status, errorCode(data)) };
   } catch {
-    return { ok: false, message: CHAT_ERRORS.generic };
+    return { ok: false, message: CHAT_ERRORS.generic }; // a network failure or the timeout
+  } finally {
+    clearTimeout(timer);
   }
 }

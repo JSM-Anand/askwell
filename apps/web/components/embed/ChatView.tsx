@@ -42,6 +42,19 @@ export type ChatViewProps = {
 /** Every message is rendered as text: React escapes it, and nothing here sets HTML. */
 export function ChatView({ messages, typing, draft, showBadge, onDraftChange, onSubmit }: ChatViewProps) {
   const log = useRef<HTMLDivElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const wasTyping = useRef(false);
+
+  // Disabling the input while a reply is on its way drops its focus. When the reply (or an error notice)
+  // arrives, give it back, unless the visitor moved on to another control in the meantime.
+  useEffect(() => {
+    if (wasTyping.current && !typing) {
+      const input = form.current?.querySelector("input");
+      const active = document.activeElement;
+      if (input && (!active || active === document.body || active === input)) input.focus();
+    }
+    wasTyping.current = typing;
+  }, [typing]);
 
   // Keep the newest message in view. Set scrollTop on the list itself: scrollIntoView can also scroll the host page.
   useEffect(() => {
@@ -79,7 +92,7 @@ export function ChatView({ messages, typing, draft, showBadge, onDraftChange, on
           </p>
         ) : null}
       </div>
-      <form onSubmit={submit} className="flex gap-2 border-t border-glass-border bg-glass p-3 backdrop-blur-(--blur-glass)">
+      <form ref={form} onSubmit={submit} className="flex gap-2 border-t border-glass-border bg-glass p-3 backdrop-blur-(--blur-glass)">
         <Input
           aria-label="Your message"
           placeholder="Type your question"
