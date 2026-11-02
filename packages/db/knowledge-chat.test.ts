@@ -464,40 +464,94 @@ describe("access", () => {
 });
 
 describe("match_chunks with a crowded index", () => {
-  // The HNSW index spans every project. By default Postgres takes the nearest hnsw.ef_search (40)
-  // chunks of ALL projects and only then filters by project, so a small project can get fewer than
-  // p_count rows while a big project's chunks crowd the top. match_chunks sets
-  // hnsw.iterative_scan = 'relaxed_order' (pgvector 0.8+; dev runs 0.8.2) so the scan continues
-  // until the filter has produced enough rows.
-  //
-  // pglite's pgvector build (0.8.7) cannot show this. The settings are accepted (current_setting
-  // reports them) but do not change the scan: with 3,000 random vectors and a ~2% filter, the
-  // HNSW scan reads about 330 tuples whether hnsw.ef_search is 40 or 1000 and whether
-  // hnsw.iterative_scan is off, strict_order or relaxed_order. So the behavior is checked on a real
-  // database, not here; what pglite can check is how the function is built.
-  it.todo("a small project still gets its p_count chunks when another project holds many closer ones (needs real Postgres + pgvector 0.8)");
+  // Another project holds many chunks closer to the question than any of this project's.
+  // An approximate index search over all projects would fill its candidate list with the other
+  // project's chunks and then filter them out, leaving this project short. match_chunks ranks the
+  // project's own ready chunks exactly, so it still gets its p_count, best first.
+  const SMALL = "00000000-0000-4000-8000-0000000000d1";
+  const BIG = "00000000-0000-4000-8000-0000000000d2";
+  const SMALL_SOURCE = "00000000-0000-4000-8000-00000000d101";
+  const BIG_SOURCE = "00000000-0000-4000-8000-00000000d201";
+  const QUERY = vec({ 0: 1 });
 
-  it("is configured for iterative scans and re-sorts the nearest rows exactly", async () => {
-    const { proconfig } = await one<{ proconfig: string[] }>(
-      "select proconfig from pg_proc where proname = 'match_chunks'",
+  let iso: PGlite;
+
+  const match = (projectId: string, n = 5) =>
+    queryAs<{ content: string; source_id: string; similarity: number }>(
+      iso,
+      SERVICE,
+      "select * from match_chunks($1, $2::extensions.vector, $3)",
+      [projectId, QUERY, n],
     );
-    expect(proconfig).toContain("hnsw.iterative_scan=relaxed_order");
-    // relaxed_order can return rows slightly out of order. pgvector's README (v0.8.2) gives the recipe:
-    // a materialized inner query (order by distance, limit) and an outer order by distance + 0.
-    const { src } = await one<{ src: string }>(
-      "select pg_get_functiondef('public.match_chunks(uuid,extensions.vector,integer)'::regprocedure) as src",
+
+  beforeAll(async () => {
+    iso = await createSupabasePglite();
+    await iso.exec(`
+      insert into accounts (clerk_user_id) values ('o_small'), ('o_big');
+      insert into projects (id, owner_id, name, public_key) values
+        ('${SMALL}', 'o_small', 'small', 'pk_small'), ('${BIG}', 'o_big', 'big', 'pk_big');
+      insert into knowledge_sources (id, project_id, title, type, status) values
+        ('${SMALL_SOURCE}', '${SMALL}', 'small', 'text', 'ready'), ('${BIG_SOURCE}', '${BIG}', 'big', 'text', 'ready');
+    `);
+    // The big project: 400 distinct chunks, all almost exactly the question's direction.
+    const near = Array.from({ length: 400 }, (_, g) => vec({ 0: 1, [10 + (g % 200)]: 0.02 + (g % 7) * 0.003 }));
+    await iso.query(
+      `insert into knowledge_chunks (project_id, source_id, content, embedding)
+       select $1, $2, 'big ' || t.g, t.v::extensions.vector from unnest($3::text[]) with ordinality as t(v, g)`,
+      [BIG, BIG_SOURCE, near],
     );
-    expect(src).toMatch(/with nearest as materialized/);
-    expect(src).toMatch(/order by c\.embedding operator\(extensions\.<=>\) p_embedding\s+limit p_count/);
-    expect(src).toMatch(/order by n\.distance \+ 0/);
+    // The small project: 5 chunks that are all farther from the question, in a known order (1 is the closest).
+    for (let i = 1; i <= 5; i++) {
+      await iso.query(
+        "insert into knowledge_chunks (project_id, source_id, content, embedding) values ($1, $2, $3, $4::extensions.vector)",
+        [SMALL, SMALL_SOURCE, `small ${i}`, vec({ 0: 1, 1: i * 0.3 })],
+      );
+    }
   });
 
-  it("filters by project and ready status inside the nearest-rows query, so the limit applies to the right rows", async () => {
+  afterAll(async () => {
+    await iso.close();
+  });
+
+  it("gives the small project its 5 chunks, best first, none of the big project's", async () => {
+    const rows = await match(SMALL);
+    expect(rows.map((r) => r.content)).toEqual(["small 1", "small 2", "small 3", "small 4", "small 5"]);
+    for (const r of rows) expect(r.source_id).toBe(SMALL_SOURCE);
+    const similarities = rows.map((r) => r.similarity);
+    expect(similarities).toEqual([...similarities].sort((a, b) => b - a));
+    expect(similarities[0]).toBeCloseTo(1 / Math.sqrt(1 + 0.09), 4);
+  });
+
+  it("gives the same result when the planner is steered toward index scans", async () => {
+    await iso.exec("set enable_seqscan = off; set enable_bitmapscan = off");
+    expect((await match(SMALL)).map((r) => r.content)).toEqual(["small 1", "small 2", "small 3", "small 4", "small 5"]);
+    await iso.exec("reset enable_seqscan; reset enable_bitmapscan");
+  });
+
+  it("still serves the big project, best first", async () => {
+    const rows = await match(BIG);
+    expect(rows).toHaveLength(5);
+    for (const r of rows) expect(r.similarity).toBeGreaterThan(0.99);
+    const similarities = rows.map((r) => r.similarity);
+    expect(similarities).toEqual([...similarities].sort((a, b) => b - a));
+  });
+
+  it("ranks the project's own chunks without the HNSW index or any hnsw setting", async () => {
+    const { proconfig } = await one<{ proconfig: string[] }>("select proconfig from pg_proc where proname = 'match_chunks'");
+    expect(proconfig).toEqual(['search_path=""']);
     const { src } = await one<{ src: string }>(
       "select pg_get_functiondef('public.match_chunks(uuid,extensions.vector,integer)'::regprocedure) as src",
     );
-    const inner = src.slice(src.indexOf("with nearest as materialized"), src.indexOf("order by n.distance"));
-    expect(inner).toMatch(/c\.project_id = p_project_id/);
-    expect(inner).toMatch(/s\.status = 'ready'/);
+    expect(src).toMatch(/with scoped as materialized/);
+    expect(src).toMatch(/c\.project_id = p_project_id/);
+    expect(src).toMatch(/s\.status = 'ready'/);
+    expect(src).not.toMatch(/hnsw\./);
+  });
+
+  it("has an index that starts with project_id, so the project's chunks are found without scanning the table", async () => {
+    const { def } = await one<{ def: string }>(
+      "select indexdef as def from pg_indexes where tablename = 'knowledge_chunks' and indexname = 'knowledge_chunks_project_id_idx'",
+    );
+    expect(def).toMatch(/\(project_id\)/);
   });
 });
