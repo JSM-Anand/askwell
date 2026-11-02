@@ -8,7 +8,7 @@ import {
   KNOWLEDGE_FILE_TYPES,
   KNOWLEDGE_SOURCE_STATUSES,
   KNOWLEDGE_SOURCE_TYPES,
-  MAX_FILE_SIZE_BYTES,
+  MAX_KNOWLEDGE_FILE_BYTES,
   MAX_MESSAGE_LENGTH,
   MESSAGE_ROLES,
   widgetConfigSchema,
@@ -21,7 +21,7 @@ describe("constants", () => {
 
   it("matches §7 and §9", () => {
     expect(MAX_MESSAGE_LENGTH).toBe(1000);
-    expect(MAX_FILE_SIZE_BYTES).toBe(10 * 1024 * 1024);
+    expect(MAX_KNOWLEDGE_FILE_BYTES).toBe(10 * 1024 * 1024);
     expect(KNOWLEDGE_FILE_TYPES).toEqual(["pdf", "md", "txt"]);
     expect(KNOWLEDGE_FILE_MIME_TYPES.pdf).toBe("application/pdf");
     expect(KNOWLEDGE_SOURCE_TYPES).toEqual(["text", "pdf", "md", "txt"]);

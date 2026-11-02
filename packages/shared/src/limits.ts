@@ -3,7 +3,8 @@ import type { KnowledgeSourceType } from "./enums";
 /** Visitor message length, in characters. */
 export const MAX_MESSAGE_LENGTH = 1000;
 
-export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+/** Max knowledge file size (project.md §6); the Storage bucket enforces the same limit. */
+export const MAX_KNOWLEDGE_FILE_BYTES = 10 * 1024 * 1024;
 
 export const KNOWLEDGE_FILE_TYPES = ["pdf", "md", "txt"] as const;
 export type KnowledgeFileType = (typeof KNOWLEDGE_FILE_TYPES)[number];

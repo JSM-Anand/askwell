@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_FILE_SIZE_BYTES,
+  MAX_KNOWLEDGE_FILE_BYTES,
   MAX_MESSAGE_LENGTH,
   chatRequestSchema,
   createProjectSchema,
@@ -74,11 +74,11 @@ describe("uploadUrlSchema", () => {
   const base = { title: "Guide", fileType: "pdf", size: 1024 };
   it("accepts pdf, md and txt up to the size limit", () => {
     for (const fileType of ["pdf", "md", "txt"]) expect(ok(uploadUrlSchema, { ...base, fileType })).toBe(true);
-    expect(ok(uploadUrlSchema, { ...base, size: MAX_FILE_SIZE_BYTES })).toBe(true);
+    expect(ok(uploadUrlSchema, { ...base, size: MAX_KNOWLEDGE_FILE_BYTES })).toBe(true);
   });
   it("rejects other types, oversize, zero and fractional sizes", () => {
     expect(ok(uploadUrlSchema, { ...base, fileType: "exe" })).toBe(false);
-    expect(ok(uploadUrlSchema, { ...base, size: MAX_FILE_SIZE_BYTES + 1 })).toBe(false);
+    expect(ok(uploadUrlSchema, { ...base, size: MAX_KNOWLEDGE_FILE_BYTES + 1 })).toBe(false);
     expect(ok(uploadUrlSchema, { ...base, size: 0 })).toBe(false);
     expect(ok(uploadUrlSchema, { ...base, size: 1.5 })).toBe(false);
   });
@@ -95,6 +95,10 @@ describe("updateConfigSchema", () => {
     expect(ok(updateConfigSchema, { buttonColor: "#ff0000", position: "top-left", showBadge: false })).toBe(true);
   });
   it("rejects an empty patch", () => expect(ok(updateConfigSchema, {})).toBe(false));
+  it("rejects fields that are present but undefined", () => {
+    expect(ok(updateConfigSchema, { label: undefined })).toBe(false);
+    expect(ok(updateConfigSchema, { label: "Help", position: undefined })).toBe(false);
+  });
   it("rejects bad values", () => {
     expect(ok(updateConfigSchema, { buttonColor: "red" })).toBe(false);
     expect(ok(updateConfigSchema, { position: "middle" })).toBe(false);

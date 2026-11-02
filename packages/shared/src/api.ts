@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { KnowledgeSourceStatus, KnowledgeSourceType, MessageRole } from "./enums";
 import {
   KNOWLEDGE_FILE_TYPES,
-  MAX_FILE_SIZE_BYTES,
+  MAX_KNOWLEDGE_FILE_BYTES,
   MAX_MESSAGE_LENGTH,
   MAX_PASTED_TEXT_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
@@ -89,7 +89,7 @@ export const uploadUrlSchema = z.object({
   /** File extension, checked against the declared name server-side. */
   fileType: z.enum(KNOWLEDGE_FILE_TYPES),
   /** Declared size in bytes. */
-  size: z.number().int().positive().max(MAX_FILE_SIZE_BYTES),
+  size: z.number().int().positive().max(MAX_KNOWLEDGE_FILE_BYTES),
 });
 export type UploadUrlInput = z.infer<typeof uploadUrlSchema>;
 export type UploadUrlResponse = {
@@ -111,6 +111,8 @@ export type ConversationSummary = {
   visitorId: string;
   createdAt: string;
   messageCount: number;
+  /** Start of the first visitor message, for the list view; null if none. */
+  firstMessagePreview: string | null;
 };
 export type ConversationMessage = {
   id: string;
@@ -128,9 +130,9 @@ export type GetConversationResponse = {
   messages: ConversationMessage[];
 };
 
-/** PATCH /api/projects/:id/config: any subset of the fields, at least one. */
+/** PATCH /api/projects/:id/config: any subset of the fields, at least one with a value. */
 export const updateConfigSchema = widgetConfigSchema
-  .partial()
+  .exactPartial()
   .refine((value) => Object.keys(value).length > 0, "Send at least one field");
 export type UpdateConfigInput = z.infer<typeof updateConfigSchema>;
 export type UpdateConfigResponse = { config: WidgetConfig };
