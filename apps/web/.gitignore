@@ -1,3 +1,6 @@
 .next
 next-env.d.ts
 *.tsbuildinfo
+
+# Built from apps/widget by the build and dev scripts
+public/widget.js
