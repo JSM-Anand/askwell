@@ -70,6 +70,16 @@ describe("embedTexts", () => {
     await expect(embedTexts(["1"])).rejects.toThrow("Expected 1536 dimensions, got 768");
   });
 
+  it.each([
+    ["duplicate indices", [1, 1]],
+    ["out-of-range indices", [0, 5]],
+    ["indices that skip 0", [1, 2]],
+    ["negative indices", [-1, 0]],
+  ])("rejects %s, since the vectors can't be tied to their texts", async (_label, indices) => {
+    create.mockResolvedValueOnce({ data: indices.map((index) => ({ index, embedding: vec(index) })) });
+    await expect(embedTexts(["1", "2"])).rejects.toThrow("Embedding indices don't match the inputs");
+  });
+
   it("rejects a response with the wrong number of embeddings", async () => {
     create.mockResolvedValueOnce({ data: [{ index: 0, embedding: vec(1) }] });
     await expect(embedTexts(["1", "2"])).rejects.toThrow("Expected 2 embeddings, got 1");

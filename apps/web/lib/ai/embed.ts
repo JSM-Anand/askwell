@@ -33,6 +33,10 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
     }
     // `index` ties each vector to its input, so order doesn't depend on the response order.
     const ordered = [...response.data].sort((a, b) => a.index - b.index);
+    // The indices must be exactly 0..n-1; a duplicate or a gap means some vector can't be tied to its text.
+    if (ordered.some((item, position) => item.index !== position)) {
+      throw new Error("Embedding indices don't match the inputs");
+    }
     for (const { embedding } of ordered) {
       if (embedding.length !== EMBEDDING_DIMENSIONS) {
         throw new Error(`Expected ${EMBEDDING_DIMENSIONS} dimensions, got ${embedding.length}`);
