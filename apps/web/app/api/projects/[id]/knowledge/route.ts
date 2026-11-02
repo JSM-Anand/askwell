@@ -11,7 +11,7 @@ export const maxDuration = 300;
 
 type Context = { params: Promise<{ id: string }> };
 
-/** POST /api/projects/:id/knowledge: paste text with a title. */
+/** POST /api/projects/:id/knowledge: paste text with a title, then process it. */
 export async function POST(request: Request, { params }: Context): Promise<NextResponse> {
   try {
     const ctx = await loadOwnerContext(params);
