@@ -5,7 +5,7 @@ import { ensureAccount } from "../../lib/accounts/ensure-account";
 import { getAccount, planLabel } from "../../lib/accounts/get-account";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  // The user comes from the verified Clerk session, never from the request.
+  // The user ID comes from the verified Clerk session, never from the request.
   const { userId } = await auth.protect();
 
   await ensureAccount(userId);
