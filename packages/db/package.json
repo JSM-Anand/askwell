@@ -7,6 +7,11 @@
   "types": "./index.ts",
   "scripts": {
     "lint": "eslint .",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.14",
+    "@electric-sql/pglite-pgvector": "0.0.15"
   }
 }
