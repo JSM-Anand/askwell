@@ -289,6 +289,16 @@ export type Database = {
       }
       owned_conversation_ids: { Args: never; Returns: string[] }
       owned_project_ids: { Args: never; Returns: string[] }
+      owner_activity: {
+        Args: { p_limit?: number; p_project_id: string }
+        Returns: {
+          created_at: string
+          first_message_preview: string
+          id: string
+          message_count: number
+          visitor_id: string
+        }[]
+      }
       reserve_knowledge_source: {
         Args: {
           p_max_sources: number
