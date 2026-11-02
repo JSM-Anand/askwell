@@ -1,11 +1,8 @@
-import { SectionPage } from "../../components/dashboard/SectionPage";
+import { auth } from "@clerk/nextjs/server";
+import { ProjectsView } from "../../components/projects/ProjectsView";
 
-export default function DashboardPage() {
-  return (
-    <SectionPage
-      title="Projects"
-      emptyTitle="No projects yet"
-      emptyText="Your projects will appear here. Each one gets its own chat widget."
-    />
-  );
+export default async function DashboardPage() {
+  // The layout checks the session too; each page is its own gate.
+  await auth.protect();
+  return <ProjectsView />;
 }
