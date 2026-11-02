@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { APP_NAME, MAX_MESSAGE_LENGTH } from "@askwell/shared";
 import { Button } from "../ui/Button";
@@ -38,6 +41,14 @@ export type ChatViewProps = {
 
 /** Every message is rendered as text: React escapes it, and nothing here sets HTML. */
 export function ChatView({ messages, typing, draft, showBadge, onDraftChange, onSubmit }: ChatViewProps) {
+  const log = useRef<HTMLDivElement>(null);
+
+  // Keep the newest message in view. Set scrollTop on the list itself: scrollIntoView can also scroll the host page.
+  useEffect(() => {
+    const el = log.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length, typing]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onSubmit();
@@ -45,7 +56,7 @@ export function ChatView({ messages, typing, draft, showBadge, onDraftChange, on
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4" role="log" aria-live="polite">
+      <div ref={log} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4" role="log" aria-live="polite">
         {messages.length === 0 ? <p className="text-sm text-fg-muted">Ask a question to get started.</p> : null}
         {messages.map((m) => (
           <p
