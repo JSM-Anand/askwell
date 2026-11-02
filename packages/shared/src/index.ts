@@ -6,3 +6,4 @@ export * from "./errors";
 export * from "./limits";
 export * from "./plans";
 export * from "./widget";
+export * from "./widget-messages";
