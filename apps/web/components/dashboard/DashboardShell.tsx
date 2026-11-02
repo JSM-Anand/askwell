@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { APP_NAME } from "@askwell/shared";
 import { NavList } from "./NavList";
 
-export function DashboardShell({ children }: { children: ReactNode }) {
+export function DashboardShell({ children, planLabel }: { children: ReactNode; planLabel?: string }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -31,7 +31,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             </button>
             <span className="text-lg font-semibold md:hidden">{APP_NAME}</span>
           </div>
-          <UserButton />
+          <div className="flex items-center gap-3">
+            {planLabel ? (
+              <span className="rounded-full border border-border bg-surface-raised px-3 py-1 text-sm font-medium">
+                {planLabel}
+              </span>
+            ) : null}
+            <UserButton />
+          </div>
         </header>
 
         {menuOpen ? (
