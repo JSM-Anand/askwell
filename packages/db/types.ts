@@ -251,6 +251,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_project: {
+        Args: {
+          p_max_projects: number
+          p_name: string
+          p_owner_id: string
+          p_public_key: string
+        }
+        Returns: {
+          created_at: string
+          id: string
+          messages_used: number
+          name: string
+          owner_id: string
+          period_start: string
+          public_key: string
+        }
+      }
       owned_conversation_ids: {
         Args: never
         Returns: string[]
