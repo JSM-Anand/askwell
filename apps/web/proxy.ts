@@ -2,6 +2,7 @@ import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 // Matchers mirror project.md §8. Prefix patterns end in `.*` so they fail closed.
+// Clerk keys come from the environment (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY).
 const PROTECTED_PATHS: RegExp[] = [
   /^\/dashboard.*$/,
   /^\/api\/projects.*$/,
