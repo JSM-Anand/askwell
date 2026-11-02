@@ -11,7 +11,8 @@ export function InstallSnippet() {
           Install in one line
         </h2>
         <p className="mb-8 text-center text-sm text-fg-muted">
-          Paste this before the closing body tag. Your dashboard gives you the real key.
+          This is an example. Replace both <code>YOUR_APP_URL</code> and <code>pk_your_key</code>, or copy
+          the ready-made snippet from your dashboard&apos;s Install page once you create a project.
         </p>
         <Reveal>
           <GlassPanel className="p-4">

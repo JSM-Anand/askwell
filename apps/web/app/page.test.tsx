@@ -38,9 +38,27 @@ describe("home page", () => {
       expect(card).toContain(`<dd class="font-medium">${n(l.projects)}</dd>`);
       expect(card).toContain(`<dd class="font-medium">${n(l.messagesPerMonth)}</dd>`);
       expect(card).toContain(`<dd class="font-medium">${n(l.knowledgeSources)}</dd>`);
-      expect(card).toContain(l.customize.buttonColor ? ">Yes<" : ">No<");
       expect(card).toContain(l.customize.hideBadge ? ">Hidden<" : ">Shown<");
     }
+  });
+
+  it("shows the customization differences from section 5", () => {
+    const cardOf = (plan: string) => html.split(`data-plan="${plan}"`)[1]?.split("</dl>")[0] ?? "";
+    const free = cardOf("free");
+    const pro = cardOf("pro");
+    for (const label of ["Button color", "Button position", "Button label", "Open animation", "Header text"]) {
+      expect(free).toContain(label);
+      expect(pro).toContain(label);
+    }
+    for (const value of ["Default", "Bottom right", "Fade", "Shown"]) expect(free).toContain(`>${value}<`);
+    for (const value of ["Any", "Any corner", "Custom", "Fade / Slide / Scale", "Hidden"]) {
+      expect(pro).toContain(`>${value}<`);
+    }
+  });
+
+  it("labels the install snippet values as placeholders", () => {
+    expect(html).toContain("This is an example");
+    expect(html).toContain("YOUR_APP_URL");
   });
 
   it("links Start free to /sign-up in the hero and in pricing", () => {

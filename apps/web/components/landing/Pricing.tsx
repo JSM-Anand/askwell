@@ -5,7 +5,10 @@ import { Reveal } from "./Reveal";
 
 const PLAN_NAMES: Record<Plan, string> = { free: "Free", pro: "Pro" };
 
-const yesNo = (value: boolean) => (value ? "Yes" : "No");
+const words = (value: string) => {
+  const text = value.replace(/-/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
 function rows(plan: Plan): { label: string; value: string }[] {
   const limits = PLAN_LIMITS[plan];
@@ -13,7 +16,14 @@ function rows(plan: Plan): { label: string; value: string }[] {
     { label: "Projects", value: limits.projects.toLocaleString("en-US") },
     { label: "Messages / month (per project)", value: limits.messagesPerMonth.toLocaleString("en-US") },
     { label: "Knowledge sources (per project)", value: limits.knowledgeSources.toLocaleString("en-US") },
-    { label: "Customize the widget", value: yesNo(limits.customize.buttonColor) },
+    { label: "Button color", value: limits.customize.buttonColor ? "Any" : "Default" },
+    {
+      label: "Button position",
+      value: limits.customize.positions.length > 1 ? "Any corner" : words(limits.customize.positions[0] ?? "bottom-right"),
+    },
+    { label: "Button label", value: limits.customize.label ? "Custom" : "Default" },
+    { label: "Open animation", value: limits.customize.animations.map(words).join(" / ") },
+    { label: "Header text", value: limits.customize.headerText ? "Custom" : "Default" },
     { label: "“Powered by” badge", value: limits.customize.hideBadge ? "Hidden" : "Shown" },
   ];
 }
