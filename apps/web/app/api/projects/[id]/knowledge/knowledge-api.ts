@@ -94,13 +94,21 @@ export async function reserveSource(
   return { source: data as SourceRow };
 }
 
-/** Best effort: a Storage failure here must never fail the request that called it. */
-export async function removeFiles(keys: string[]): Promise<void> {
-  if (keys.length === 0) return;
+/**
+ * Removes files from Storage and says whether it worked. It never throws, so a Storage failure can't fail
+ * the request on its own; callers that must not leave a file without its row (or the reverse) check the result.
+ */
+export async function removeFiles(keys: string[]): Promise<boolean> {
+  if (keys.length === 0) return true;
   try {
     const { error } = await createServiceClient().storage.from(KNOWLEDGE_BUCKET).remove(keys);
-    if (error) console.error("Could not remove files from Storage", error.message);
+    if (error) {
+      console.error("Could not remove files from Storage", error.message);
+      return false;
+    }
+    return true;
   } catch (cause) {
     console.error("Could not remove files from Storage", cause);
+    return false;
   }
 }

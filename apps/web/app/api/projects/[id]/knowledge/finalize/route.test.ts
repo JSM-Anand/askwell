@@ -153,6 +153,80 @@ describe("POST finalize: files that are refused", () => {
   });
 });
 
+describe("POST finalize: only a fresh reservation can be claimed", () => {
+  const HOUR = 60 * 60 * 1000;
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+  it("is 404 for a reservation older than 2 hours, and leaves it and its file alone", async () => {
+    const source = m.fake.addSource({ project_id: PROJECT, type: "txt", created_at: ago(3 * HOUR) }, "Some text");
+    const res = await finalize(source.id);
+    expect(res.status).toBe(404);
+    expect(m.processSource).not.toHaveBeenCalled();
+    expect(statusOf(source.id)).toBe("uploading");
+    expect(m.fake.state.files.has(source.storage_key!)).toBe(true);
+    // The claim attempt matched nothing; nothing was removed or deleted.
+    expect(m.fake.state.log.filter((line) => !line.startsWith("update"))).toEqual([]);
+    expect(m.fake.state.sources).toHaveLength(1);
+  });
+
+  it("still claims one that is just inside the 2 hours", async () => {
+    const source = m.fake.addSource({ project_id: PROJECT, type: "txt", created_at: ago(2 * HOUR - 60_000) }, "Some text");
+    expect((await finalize(source.id)).status).toBe(200);
+    expect(m.processSource).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("POST finalize: a refused file's cleanup", () => {
+  const fakePdf = () => m.fake.addSource({ project_id: PROJECT, type: "pdf" }, "This is plain text renamed to .pdf");
+  const bigTxt = () => m.fake.addSource({ project_id: PROJECT, type: "txt" }, new Blob([new Uint8Array(MAX_KNOWLEDGE_FILE_BYTES + 1)]));
+
+  it.each([
+    ["a .txt posing as a PDF", fakePdf, "unsupported_file_type"],
+    ["an oversized file", bigTxt, "file_too_large"],
+  ])("keeps the row, as failed, when %s can't be removed from Storage, so no file is left without its row", async (_label, add, code) => {
+    const source = add();
+    m.fake.state.fail.remove = { message: "storage down" };
+    const res = await finalize(source.id);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe(code);
+    expect(m.fake.state.sources.map((s) => s.id)).toEqual([source.id]);
+    expect(statusOf(source.id)).toBe("failed");
+    expect(m.fake.state.files.has(source.storage_key!)).toBe(true);
+  });
+
+  it("deletes the row only after the file is gone", async () => {
+    const source = fakePdf();
+    await finalize(source.id);
+    expect(m.fake.state.log.slice(-2)).toEqual([expect.stringContaining("remove "), "delete source"]);
+  });
+
+  it("is 500, not a refusal, when the row of a refused file can't be deleted", async () => {
+    const source = fakePdf();
+    m.fake.state.fail.delete = { message: "db down" };
+    const res = await finalize(source.id);
+    expect(res.status).toBe(500);
+    expect((await res.json()).error.code).toBe("internal_error");
+    expect(m.fake.state.files.has(source.storage_key!)).toBe(false);
+  });
+});
+
+describe("POST finalize: a failed write is never ignored", () => {
+  it("is 500, not 400, when the claim of a not-yet-uploaded file can't be handed back", async () => {
+    const source = m.fake.addSource({ project_id: PROJECT, type: "txt" });
+    m.fake.state.fail.updateTo = { status: "uploading", failure: { message: "db down" } };
+    const res = await finalize(source.id);
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain("db down");
+  });
+
+  it("is 500 when the claim can't be handed back after a Storage error", async () => {
+    const source = m.fake.addSource({ project_id: PROJECT, type: "txt" }, "x");
+    m.fake.state.fail.download = { message: "storage down" };
+    m.fake.state.fail.updateTo = { status: "uploading", failure: { message: "db down" } };
+    expect((await finalize(source.id)).status).toBe(500);
+  });
+});
+
 describe("POST finalize: files that can't be read are kept as failed", () => {
   it.each([
     ["a PDF that can't be parsed", "pdf", "%PDF-1.4\nnot a real body"],

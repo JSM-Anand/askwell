@@ -22,8 +22,11 @@ export type FakeState = {
   log: string[];
   rpcCalls: Record<string, unknown>[];
   buckets: string[];
-  /** Make a call fail: "download", "remove", "sign" or "select". */
-  fail: Partial<Record<"download" | "remove" | "sign" | "select", Failure>>;
+  /** Make a call fail: "download", "remove", "sign", "select" or "delete" (a source row). */
+  fail: Partial<Record<"download" | "remove" | "sign" | "select" | "delete", Failure>> & {
+    /** Make every update that sets this status fail. */
+    updateTo?: { status: string; failure: Failure };
+  };
 };
 
 const HOUR = 60 * 60 * 1000;
@@ -55,6 +58,10 @@ class Query implements PromiseLike<{ data: unknown; error: Failure | null }> {
     this.filters.push((row) => String(row[column]) < value);
     return this;
   }
+  gte(column: keyof FakeSource, value: string) {
+    this.filters.push((row) => String(row[column]) >= value);
+    return this;
+  }
   not(column: keyof FakeSource, _operator: string, value: unknown) {
     this.filters.push((row) => row[column] !== value);
     return this;
@@ -67,10 +74,13 @@ class Query implements PromiseLike<{ data: unknown; error: Failure | null }> {
       return { data: matches.map((row) => ({ ...row })), error: null };
     }
     if (this.action === "update") {
+      const blocked = this.state.fail.updateTo;
+      if (blocked && this.patch.status === blocked.status) return { data: [], error: blocked.failure };
       this.state.log.push(`update ${JSON.stringify(this.patch)}`);
       for (const row of matches) Object.assign(row, this.patch);
       return { data: matches.map((row) => ({ ...row })), error: null };
     }
+    if (this.state.fail.delete) return { data: [], error: this.state.fail.delete };
     this.state.log.push("delete source");
     this.state.sources = this.state.sources.filter((row) => !matches.includes(row));
     return { data: matches, error: null };
