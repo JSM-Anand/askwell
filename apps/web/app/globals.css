@@ -1,1 +1,91 @@
 @import "tailwindcss";
+
+/* Design tokens (project.md §13). Raw scale first, then semantic tokens per surface. */
+@theme {
+  --color-mono-0: #ffffff;
+  --color-mono-50: #fafafa;
+  --color-mono-100: #f4f4f5;
+  --color-mono-200: #e4e4e7;
+  --color-mono-300: #d4d4d8;
+  --color-mono-400: #a1a1aa;
+  --color-mono-500: #71717a;
+  --color-mono-600: #52525b;
+  --color-mono-700: #3f3f46;
+  --color-mono-800: #27272a;
+  --color-mono-900: #18181b;
+  --color-mono-950: #09090b;
+  --color-mono-1000: #000000;
+  --color-error: #dc2626;
+  --color-error-soft: #fef2f2;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.25rem;
+  --radius-full: 9999px;
+
+  --blur-glass: 16px;
+}
+
+/* Light surface (dashboard) is the default. */
+:root {
+  --surface: var(--color-mono-50);
+  --surface-raised: var(--color-mono-0);
+  --fg: var(--color-mono-950);
+  --fg-muted: var(--color-mono-600);
+  --border: var(--color-mono-200);
+  --accent: var(--color-mono-950);
+  --accent-fg: var(--color-mono-0);
+  --accent-hover: var(--color-mono-800);
+  --danger: var(--color-error);
+  --danger-soft: var(--color-error-soft);
+  --focus-ring: var(--color-mono-950);
+
+  --glass-bg: rgb(255 255 255 / 0.6);
+  --glass-border: rgb(0 0 0 / 0.08);
+  --glass-shadow: 0 8px 32px rgb(0 0 0 / 0.08);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.14);
+}
+
+/* Dark surface (landing). Wrap a subtree in data-surface="dark". */
+[data-surface="dark"] {
+  --surface: var(--color-mono-1000);
+  --surface-raised: var(--color-mono-900);
+  --fg: var(--color-mono-0);
+  --fg-muted: var(--color-mono-400);
+  --border: var(--color-mono-800);
+  --accent: var(--color-mono-0);
+  --accent-fg: var(--color-mono-950);
+  --accent-hover: var(--color-mono-200);
+  --danger-soft: rgb(220 38 38 / 0.15);
+  --focus-ring: var(--color-mono-0);
+
+  --glass-bg: rgb(255 255 255 / 0.06);
+  --glass-border: rgb(255 255 255 / 0.12);
+  --glass-shadow: 0 8px 32px rgb(0 0 0 / 0.5);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.7);
+}
+
+/* Expose semantic tokens as Tailwind utilities (bg-surface, text-fg, shadow-glass, ...). */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-hover: var(--accent-hover);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-focus: var(--focus-ring);
+  --color-glass: var(--glass-bg);
+  --color-glass-border: var(--glass-border);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-glass: var(--glass-shadow);
+}
