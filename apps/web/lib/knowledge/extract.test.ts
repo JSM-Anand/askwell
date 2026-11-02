@@ -3,21 +3,24 @@ import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
-import { ExtractError, extractText } from "./extract";
+import { ExtractError, MAX_PDF_PAGES, extractText } from "./extract";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 
-/** A minimal one-page PDF whose page shows `lines`, with a correct xref table. */
-function makePdf(lines: string[]): Uint8Array {
+/** A minimal PDF with `pages` pages that all show `lines`, with a correct xref table. */
+function makePdf(lines: string[], pages = 1): Uint8Array {
   const content = lines.length
     ? `BT /F1 12 Tf 72 720 Td 14 TL ${lines.map((l) => `(${l}) Tj T*`).join(" ")} ET`
     : "";
+  const pageIds = Array.from({ length: pages }, (_, i) => 5 + i);
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages} >>`,
     `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ...pageIds.map(
+      () => "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 3 0 R /Resources << /Font << /F1 4 0 R >> >> >>",
+    ),
   ];
   let pdf = "%PDF-1.4\n";
   const offsets: number[] = [];
@@ -48,6 +51,21 @@ describe("extractText: txt and md", () => {
   it("drops a UTF-8 byte order mark", async () => {
     const withBom = new Uint8Array([0xef, 0xbb, 0xbf, ...bytes("Hello")]);
     await expect(extractText(withBom, "txt")).resolves.toBe("Hello");
+  });
+
+  it.each([
+    ["a stray continuation byte", [0x48, 0x69, 0x80, 0x21]],
+    ["an overlong encoding", [0xc0, 0xaf]],
+    ["a truncated multi-byte character", [0x48, 0xe2, 0x82]],
+    ["Latin-1 text (a lone 0xE9)", [0x43, 0x61, 0x66, 0xe9]],
+  ])("rejects malformed UTF-8 (%s) instead of storing replacement characters", async (_label, raw) => {
+    for (const type of ["txt", "md"] as const) {
+      await expect(extractText(new Uint8Array(raw), type)).rejects.toMatchObject({ code: "invalid_encoding" });
+    }
+  });
+
+  it("still accepts valid UTF-8, including a byte order mark", async () => {
+    await expect(extractText(new Uint8Array([0xef, 0xbb, 0xbf, 0xc3, 0xa9]), "txt")).resolves.toBe("é");
   });
 
   it.each([["empty", ""], ["whitespace only", " \n\t \n"]])("throws empty_text for %s", async (_label, text) => {
@@ -86,6 +104,13 @@ describe("extractText: pdf", () => {
   it("throws empty_text for a PDF with no text", async () => {
     await expect(extractText(makePdf([]), "pdf")).rejects.toMatchObject({ code: "empty_text" });
   });
+
+  it("accepts a PDF at the page limit and rejects one page over it, as too_many_pages", async () => {
+    await expect(extractText(makePdf(["Page text"], MAX_PDF_PAGES), "pdf")).resolves.toContain("Page text");
+    const error = await extractText(makePdf(["Page text"], MAX_PDF_PAGES + 1), "pdf").catch((e) => e);
+    expect(error).toBeInstanceOf(ExtractError);
+    expect(error.code).toBe("too_many_pages");
+  }, 30_000);
 
   it("does not check the %PDF- signature for txt or md", async () => {
     await expect(extractText(bytes("%PDF- is just text here"), "txt")).resolves.toBe("%PDF- is just text here");
