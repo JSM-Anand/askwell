@@ -24,7 +24,6 @@ export function EmbedPanel({ projectKey, origin }: EmbedPanelProps) {
   const [chat, dispatch] = useReducer(chatReducer, initialChat);
   const [draft, setDraft] = useState("");
   const unread = useRef(0);
-  const logEnd = useRef<HTMLDivElement>(null);
 
   // Only ever the embedding page's exact origin, never "*". With no valid origin nothing is posted.
   const post = useCallback(
@@ -60,10 +59,6 @@ export function EmbedPanel({ projectKey, origin }: EmbedPanelProps) {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [post]);
-
-  useEffect(() => {
-    logEnd.current?.scrollIntoView?.({ block: "end" });
-  }, [chat.messages.length, chat.typing]);
 
   const send = () => {
     if (!canSend(draft, chat.typing)) return;
@@ -111,7 +106,6 @@ export function EmbedPanel({ projectKey, origin }: EmbedPanelProps) {
         onDraftChange={setDraft}
         onSubmit={send}
       />
-      <div ref={logEnd} />
     </PanelShell>
   );
 }
