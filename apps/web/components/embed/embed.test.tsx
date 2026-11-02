@@ -5,7 +5,6 @@ import { ChatView } from "./ChatView";
 import { EmbedPanel } from "./EmbedPanel";
 import { canSend, chatReducer, initialChat } from "./chat-state";
 import { loadConfig } from "./load-config";
-import { MOCK_REPLY, TYPING_MS, getReply } from "./mock-reply";
 import { parseParentOrigin } from "./parent-origin";
 import { getVisitorId } from "./visitor-id";
 
@@ -16,30 +15,39 @@ const view = (over: Partial<Parameters<typeof ChatView>[0]> = {}) =>
     <ChatView messages={[]} typing={false} draft="" showBadge onDraftChange={() => {}} onSubmit={() => {}} {...over} />,
   );
 
-describe("send → typing → reply", () => {
-  it("shows the visitor message and typing, then the mock reply after about a second", async () => {
-    vi.useFakeTimers();
+describe("chat state", () => {
+  it("a send shows the visitor's message and the typing state; a reply adds the bot's message and ends it", () => {
     let state = chatReducer(initialChat, { type: "send", text: "Hi" });
     expect(state.typing).toBe(true);
     expect(view({ messages: state.messages, typing: state.typing })).toContain("Typing");
 
-    const reply = getReply();
-    await vi.advanceTimersByTimeAsync(TYPING_MS - 1);
-    let settled = false;
-    void reply.then(() => (settled = true));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    state = chatReducer(state, { type: "reply", text: await reply });
-
+    state = chatReducer(state, { type: "reply", text: "Hello there" });
     expect(state.typing).toBe(false);
     expect(state.messages.map((m) => [m.from, m.text])).toEqual([
       ["visitor", "Hi"],
-      ["bot", MOCK_REPLY],
+      ["bot", "Hello there"],
     ]);
     const html = view({ messages: state.messages });
-    expect(html).toContain(MOCK_REPLY);
+    expect(html).toContain("Hello there");
     expect(html).not.toContain("Typing");
+  });
+
+  it("an error adds a notice from the panel, ends the typing state and keeps the visitor's message", () => {
+    let state = chatReducer(initialChat, { type: "send", text: "Hi" });
+    state = chatReducer(state, { type: "error", text: "Something went wrong. Try again." });
+    expect(state.typing).toBe(false);
+    expect(state.messages.map((m) => [m.from, m.text])).toEqual([
+      ["visitor", "Hi"],
+      ["notice", "Something went wrong. Try again."],
+    ]);
+    const html = view({ messages: state.messages });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Something went wrong. Try again.");
+  });
+
+  it("disables the input while waiting for a reply, and not otherwise", () => {
+    expect(view({ typing: true })).toMatch(/<input[^>]*disabled=""/);
+    expect(view({ typing: false })).not.toMatch(/<input[^>]*disabled=""/);
   });
 
   it("only lets a non-empty draft be sent, and not while typing", () => {

@@ -9,8 +9,8 @@ import { ChatView, PanelShell } from "./ChatView";
 import { canSend, chatReducer, initialChat } from "./chat-state";
 import { loadConfig } from "./load-config";
 import type { LoadResult } from "./load-config";
-import { getReply } from "./mock-reply";
 import { parseParentOrigin } from "./parent-origin";
+import { sendChatMessage } from "./send-message";
 import { getVisitorId } from "./visitor-id";
 
 /** Height the panel asks the loader for. The loader clamps it to the viewport. */
@@ -24,7 +24,9 @@ export function EmbedPanel({ projectKey, origin }: EmbedPanelProps) {
   const [chat, dispatch] = useReducer(chatReducer, initialChat);
   const [draft, setDraft] = useState("");
   const unread = useRef(0);
-  const logEnd = useRef<HTMLDivElement>(null);
+  // In memory only: a reload starts a new conversation. The visitor ID is the stored one (see visitor-id.ts).
+  const conversationId = useRef<string | undefined>(undefined);
+  const visitorId = useRef<string | null>(null);
 
   // Only ever the embedding page's exact origin, never "*". With no valid origin nothing is posted.
   const post = useCallback(
@@ -43,7 +45,7 @@ export function EmbedPanel({ projectKey, origin }: EmbedPanelProps) {
   }, [projectKey]);
 
   useEffect(() => {
-    getVisitorId(); // creates the ID on first visit so it is already stored when Phase 3 needs it
+    visitorId.current ??= getVisitorId(); // creates the ID on the first visit, before the first message
   }, []);
 
   useEffect(() => {
@@ -61,16 +63,25 @@ export function EmbedPanel({ projectKey, origin }: EmbedPanelProps) {
     return () => window.removeEventListener("focus", onFocus);
   }, [post]);
 
-  useEffect(() => {
-    logEnd.current?.scrollIntoView?.({ block: "end" });
-  }, [chat.messages.length, chat.typing]);
-
   const send = () => {
-    if (!canSend(draft, chat.typing)) return;
-    dispatch({ type: "send", text: draft.trim().slice(0, MAX_MESSAGE_LENGTH) });
+    if (!canSend(draft, chat.typing) || !projectKey) return;
+    const message = draft.trim().slice(0, MAX_MESSAGE_LENGTH);
+    dispatch({ type: "send", text: message });
     setDraft("");
-    void getReply().then((text) => {
-      dispatch({ type: "reply", text });
+    visitorId.current ??= getVisitorId();
+
+    void sendChatMessage({
+      key: projectKey,
+      visitorId: visitorId.current,
+      conversationId: conversationId.current,
+      message,
+    }).then((result) => {
+      if (!result.ok) {
+        dispatch({ type: "error", text: result.message });
+        return;
+      }
+      conversationId.current = result.conversationId;
+      dispatch({ type: "reply", text: result.reply });
       // A reply while the panel doesn't have focus counts as unread.
       if (!document.hasFocus()) {
         unread.current += 1;
@@ -111,7 +122,6 @@ export function EmbedPanel({ projectKey, origin }: EmbedPanelProps) {
         onDraftChange={setDraft}
         onSubmit={send}
       />
-      <div ref={logEnd} />
     </PanelShell>
   );
 }
