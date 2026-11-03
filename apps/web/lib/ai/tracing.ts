@@ -42,8 +42,11 @@ export function generationProperties(ctx: Pick<TracingContext, "projectId">, tra
     $ai_latency: rec.latencySeconds,
     $ai_http_status: 200,
     $ai_base_url: GEMINI_BASE_URL,
-    $ai_input_tokens: (usage?.promptTokenCount ?? 0) + (usage?.toolUsePromptTokenCount ?? 0),
-    $ai_output_tokens: usage?.candidatesTokenCount ?? 0,
+    // Zero would mean "measured zero", so a count Gemini did not report is left out (PostHog prices from these).
+    ...(usage?.promptTokenCount !== undefined || usage?.toolUsePromptTokenCount !== undefined
+      ? { $ai_input_tokens: (usage.promptTokenCount ?? 0) + (usage.toolUsePromptTokenCount ?? 0) }
+      : {}),
+    ...(usage?.candidatesTokenCount !== undefined ? { $ai_output_tokens: usage.candidatesTokenCount } : {}),
     ...(usage?.thoughtsTokenCount ? { $ai_reasoning_tokens: usage.thoughtsTokenCount } : {}),
     ...(usage?.cachedContentTokenCount ? { $ai_cache_read_input_tokens: usage.cachedContentTokenCount } : {}),
     project_id: ctx.projectId,
