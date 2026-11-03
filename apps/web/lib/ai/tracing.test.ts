@@ -56,11 +56,16 @@ describe("traceGeneration", () => {
     expect(capture.mock.calls[0]![0].properties.$ai_trace_id).toBe("conv-new");
   });
 
-  it("counts missing usage as zero tokens", () => {
-    expect(generationProperties({ projectId: "p" }, "t", { model: "m", latencySeconds: 1 })).toMatchObject({
-      $ai_input_tokens: 0,
-      $ai_output_tokens: 0,
-    });
+  it("leaves token counts out when Gemini reported no usage", () => {
+    const props = generationProperties({ projectId: "p" }, "t", { model: "m", latencySeconds: 1 });
+    expect(props).not.toHaveProperty("$ai_input_tokens");
+    expect(props).not.toHaveProperty("$ai_output_tokens");
+  });
+
+  it("keeps a reported zero, and omits only the count that is missing", () => {
+    const props = generationProperties({ projectId: "p" }, "t", { model: "m", latencySeconds: 1, usage: { candidatesTokenCount: 0 } });
+    expect(props).toHaveProperty("$ai_output_tokens", 0);
+    expect(props).not.toHaveProperty("$ai_input_tokens");
   });
 
   it("never rejects when capture fails", async () => {
