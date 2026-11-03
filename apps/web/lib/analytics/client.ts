@@ -54,3 +54,12 @@ export function resetAnalyticsForTests() {
   pending = null;
   unconfigured = false;
 }
+
+/** The Install page's copy button. A no-op when PostHog isn't running (not configured, blocked). */
+export function trackSnippetCopied(projectId: string): void {
+  try {
+    instance?.capture("snippet_copied", { project_id: projectId });
+  } catch {
+    // Analytics must never break the page.
+  }
+}

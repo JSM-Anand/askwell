@@ -7,7 +7,7 @@ import { createServiceClient } from "../supabase/service";
 export const MATCH_COUNT = 5;
 export const HISTORY_MESSAGES = 6;
 
-export type ChatProject = { id: string; plan: Plan };
+export type ChatProject = { id: string; ownerId: string; plan: Plan };
 export type Excerpt = { content: string };
 export type HistoryMessage = { role: "visitor" | "bot"; body: string };
 
@@ -20,18 +20,18 @@ function fail(what: string, error: { message: string }): never {
 
 /**
  * The project for a public key and its owner's plan, or null. Public route, so there is no owner:
- * the lookup is by `public_key` only and selects nothing else about the project. An unknown plan
+ * the lookup is by `public_key` only and selects nothing else about the project except its owner, whose ID is the analytics distinct ID. An unknown plan
  * counts as Free.
  */
 export async function findProject(publicKey: string): Promise<ChatProject | null> {
   const { data, error } = await createServiceClient()
     .from("projects")
-    .select("id, accounts(plan)")
+    .select("id, owner_id, accounts(plan)")
     .eq("public_key", publicKey)
     .maybeSingle();
   if (error) fail("read the project", error);
   if (!data) return null;
-  return { id: data.id, plan: isPlan(data.accounts?.plan) ? data.accounts.plan : "free" };
+  return { id: data.id, ownerId: data.owner_id, plan: isPlan(data.accounts?.plan) ? data.accounts.plan : "free" };
 }
 
 /** True only when the conversation belongs to this project. */
@@ -96,4 +96,22 @@ export async function saveTurn(input: {
   });
   if (error || typeof data !== "string") fail("save the conversation", error ?? { message: "no conversation id returned" });
   return data;
+}
+
+/**
+ * True when this conversation is the project's earliest one, i.e. the save that just created it made
+ * the project's first ever conversation. Comparing with the earliest row (not counting) keeps it
+ * exactly once even when two first chats race.
+ */
+export async function isFirstConversation(projectId: string, conversationId: string): Promise<boolean> {
+  const { data, error } = await createServiceClient()
+    .from("conversations")
+    .select("id")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) fail("read the first conversation", error);
+  return data?.id === conversationId;
 }

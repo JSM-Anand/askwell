@@ -43,7 +43,7 @@ export function InstallList({ projects, origin }: { projects: InstallProject[]; 
               <code>{snippet}</code>
             </pre>
             <div>
-              <CopyButton text={snippet} />
+              <CopyButton text={snippet} projectId={project.id} />
             </div>
             <ol className="list-decimal space-y-1 pl-5 text-sm text-fg-muted">
               {STEPS.map((step) => (

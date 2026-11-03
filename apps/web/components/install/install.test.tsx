@@ -52,7 +52,7 @@ describe("InstallList", () => {
 
 describe("CopyButton", () => {
   it("starts as a Copy button", () => {
-    expect(renderToStaticMarkup(<CopyButton text="x" />)).toContain(">Copy<");
+    expect(renderToStaticMarkup(<CopyButton text="x" projectId="p1" />)).toContain(">Copy<");
   });
 });
 

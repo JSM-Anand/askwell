@@ -1,9 +1,10 @@
 import type { NextResponse } from "next/server";
 import { KNOWLEDGE_FILE_TYPES, MAX_KNOWLEDGE_FILE_BYTES, finalizeKnowledgeSchema } from "@askwell/shared";
 import type { FinalizeKnowledgeResponse, KnowledgeFileType } from "@askwell/shared";
+import { trackKnowledgeAdded } from "../../../../../../lib/analytics/events";
 import { ExtractError, extractText } from "../../../../../../lib/knowledge/extract";
 import { markSourceFailed, processSource } from "../../../../../../lib/knowledge/process-source";
-import { apiError, json, readJson } from "../../../../../../lib/projects/api";
+import { apiError, getUserId, json, readJson } from "../../../../../../lib/projects/api";
 import { createServiceClient } from "../../../../../../lib/supabase/service";
 import {
   KNOWLEDGE_BUCKET,
@@ -118,6 +119,10 @@ export async function POST(request: Request, { params }: Context): Promise<NextR
       } catch (cause) {
         console.error("Processing an uploaded file failed", cause);
         status = "failed";
+      }
+      if (status === "ready") {
+        const ownerId = await getUserId();
+        if (ownerId) await trackKnowledgeAdded(ownerId, { projectId: ctx.projectId, type });
       }
       return json<FinalizeKnowledgeResponse>({ source: toSourceSummary(source, status) });
     } catch (cause) {

@@ -12,7 +12,9 @@ const m = vi.hoisted(() => ({
   getAccount: vi.fn(),
   processSource: vi.fn(),
   markSourceFailed: vi.fn(),
+  trackKnowledgeAdded: vi.fn(),
 }));
+vi.mock("../../../../../../lib/analytics/events", () => ({ trackKnowledgeAdded: m.trackKnowledgeAdded }));
 vi.mock("@clerk/nextjs/server", () => ({ auth: m.auth }));
 vi.mock("../../../../../../lib/accounts/get-account", () => ({ getAccount: m.getAccount }));
 vi.mock("../../../../../../lib/projects/get-owned-project", () => ({
@@ -79,12 +81,21 @@ describe("POST finalize: the ready path", () => {
     expect((await finalize(source.id)).status).toBe(200);
   });
 
+  it("fires knowledge_added once with the file type when the source ends ready", async () => {
+    const source = m.fake.addSource({ project_id: PROJECT, type: "txt", title: "Secret title" }, "Secret text.");
+    await finalize(source.id);
+    expect(m.trackKnowledgeAdded).toHaveBeenCalledTimes(1);
+    expect(m.trackKnowledgeAdded).toHaveBeenCalledWith("user_1", { projectId: PROJECT, type: "txt" });
+    expect(JSON.stringify(m.trackKnowledgeAdded.mock.calls)).not.toMatch(/Secret/);
+  });
+
   it("returns the source as failed when processing fails", async () => {
     const source = m.fake.addSource({ project_id: PROJECT, type: "txt" }, "Some text");
     m.processSource.mockRejectedValueOnce(new Error("embedding service down"));
     const res = await finalize(source.id);
     expect(res.status).toBe(200);
     expect((await res.json()).source.status).toBe("failed");
+    expect(m.trackKnowledgeAdded).not.toHaveBeenCalled();
   });
 });
 
@@ -237,6 +248,7 @@ describe("POST finalize: files that can't be read are kept as failed", () => {
     const res = await finalize(source.id);
     expect(res.status).toBe(200);
     expect((await res.json()).source.status).toBe("failed");
+    expect(m.trackKnowledgeAdded).not.toHaveBeenCalled();
     expect(m.markSourceFailed).toHaveBeenCalledWith({ sourceId: source.id, projectId: PROJECT });
     expect(statusOf(source.id)).toBe("failed");
     expect(m.fake.state.files.has(source.storage_key!)).toBe(true);

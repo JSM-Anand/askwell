@@ -1,8 +1,9 @@
 import type { NextResponse } from "next/server";
 import { pasteKnowledgeSchema } from "@askwell/shared";
 import type { PasteKnowledgeResponse } from "@askwell/shared";
+import { trackKnowledgeAdded } from "../../../../../lib/analytics/events";
 import { processSource } from "../../../../../lib/knowledge/process-source";
-import { apiError, json, readJson } from "../../../../../lib/projects/api";
+import { apiError, getUserId, json, readJson } from "../../../../../lib/projects/api";
 import { loadOwnerContext, reserveSource, toSourceSummary } from "./knowledge-api";
 
 // Processing runs inside the request. 300 s is the most a Hobby plan allows (and Vercel's default
@@ -31,6 +32,10 @@ export async function POST(request: Request, { params }: Context): Promise<NextR
     } catch (cause) {
       console.error("Processing pasted text failed", cause);
       status = "failed";
+    }
+    if (status === "ready") {
+      const ownerId = await getUserId();
+      if (ownerId) await trackKnowledgeAdded(ownerId, { projectId: ctx.projectId, type: "text" });
     }
     return json<PasteKnowledgeResponse>({ source: toSourceSummary(source, status) }, 201);
   } catch (cause) {
