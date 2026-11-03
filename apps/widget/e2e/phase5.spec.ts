@@ -75,8 +75,9 @@ test("Phase 5: Free is locked, Pro customizes the widget, Free returns it to the
   expect(user.id, "the Clerk test user is created").toBeTruthy();
   const userId = user.id!;
 
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  let context: BrowserContext | undefined;
   try {
+    context = await browser.newContext({ ignoreHTTPSErrors: true });
     const page = await context.newPage();
     const ticket = (await clerk("/v1/sign_in_tokens", { method: "POST", body: JSON.stringify({ user_id: userId, expires_in_seconds: 900 }) })).token;
     await page.goto(`${APP}/sign-in?__clerk_ticket=${ticket}`);
@@ -154,7 +155,7 @@ test("Phase 5: Free is locked, Pro customizes the widget, Free returns it to the
     await fallback.click();
     await expect(endedHost.frameLocator("iframe").getByText("Powered by Askwell")).toBeVisible();
   } finally {
-    await context.close().catch(() => {});
+    await context?.close().catch(() => {});
     // Cleanup: the account row (its project and settings cascade), then the Clerk user. Both are always attempted, failures
     // are reported together afterwards. For Clerk a 404 means the user is already gone; for Supabase every non-OK status is a failure.
     const failures: string[] = [];
