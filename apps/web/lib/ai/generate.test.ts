@@ -5,6 +5,8 @@ vi.mock("server-only", () => ({}));
 
 const { generateContent } = vi.hoisted(() => ({ generateContent: vi.fn() }));
 vi.mock("./gemini", () => ({ getGemini: () => ({ models: { generateContent } }) }));
+const { traceGeneration } = vi.hoisted(() => ({ traceGeneration: vi.fn() }));
+vi.mock("./tracing", () => ({ traceGeneration }));
 
 import { generateAnswer } from "./generate";
 import { CHAT_FALLBACK_MODEL, CHAT_MODEL } from "./models";
@@ -188,5 +190,49 @@ describe("generateAnswer with errors that are not about load", () => {
   it("never touches the fallback model when the primary works", async () => {
     await ask();
     expect(modelsUsed()).toEqual([CHAT_MODEL]);
+  });
+});
+
+describe("generateAnswer tracing", () => {
+  const ctx = { distinctId: "owner_1", projectId: "p1", traceId: "conv-1" };
+  const input = { system: "s", messages: [{ role: "user" as const, content: "Hi" }] };
+
+  it("records one generation with the model that answered, its usage and a latency", async () => {
+    generateContent.mockResolvedValue({ text: "ok", usageMetadata: { promptTokenCount: 7, candidatesTokenCount: 3 } });
+    await generateAnswer(input, ctx);
+    expect(traceGeneration).toHaveBeenCalledTimes(1);
+    const [passedCtx, rec] = traceGeneration.mock.calls[0]!;
+    expect(passedCtx).toBe(ctx);
+    expect(rec.model).toBe(CHAT_MODEL);
+    expect(rec.usage).toEqual({ promptTokenCount: 7, candidatesTokenCount: 3 });
+    expect(rec.latencySeconds).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(rec)).not.toContain("Hi");
+  });
+
+  it("records the fallback model when the fallback answered", async () => {
+    generateContent
+      .mockRejectedValueOnce(new ApiError({ message: "busy", status: 503 }))
+      .mockRejectedValueOnce(new ApiError({ message: "busy", status: 503 }))
+      .mockResolvedValueOnce({ text: "from fallback", usageMetadata: {} });
+    vi.useFakeTimers();
+    const pending = generateAnswer(input, ctx);
+    await vi.advanceTimersByTimeAsync(BUSY_RETRY_DELAY_MS);
+    await pending;
+    expect(traceGeneration.mock.calls[0]![1].model).toBe(CHAT_FALLBACK_MODEL);
+  });
+
+  it("records nothing without a context, or when no text comes back", async () => {
+    await generateAnswer(input);
+    expect(traceGeneration).not.toHaveBeenCalled();
+    generateContent.mockResolvedValue({ text: "  " });
+    await expect(generateAnswer(input, ctx)).rejects.toThrow("no text");
+    expect(traceGeneration).not.toHaveBeenCalled();
+  });
+
+  it("returns the reply even if tracing throws", async () => {
+    traceGeneration.mockImplementation(() => {
+      throw new Error("tracing broke");
+    });
+    await expect(generateAnswer(input, ctx)).resolves.toBe("We open at 9.");
   });
 });

@@ -393,3 +393,38 @@ describe("analytics events", () => {
     expect(blocked.status).toBe(429);
   });
 });
+
+describe("AI tracing context", () => {
+  const tracingOf = () => m.generateAnswer.mock.calls[0]![1] as { distinctId: string; projectId: string; traceId: string | Promise<string> };
+
+  it("traces under the project owner and project, never the visitor", async () => {
+    await handleChat(request(), body());
+    expect(tracingOf()).toMatchObject({ distinctId: "owner_1", projectId: "p1" });
+    expect(JSON.stringify(tracingOf())).not.toContain("visitor_1");
+  });
+
+  it("uses the conversation ID as the trace ID for a follow-up", async () => {
+    await handleChat(request(), body({ conversationId: CONVERSATION }));
+    expect(tracingOf().traceId).toBe(CONVERSATION);
+  });
+
+  it("settles a first message's trace ID with the new conversation ID after the save", async () => {
+    await handleChat(request(), body());
+    await expect(Promise.resolve(tracingOf().traceId)).resolves.toBe("new-conversation");
+  });
+
+  it("settles the trace ID with a throwaway ID when the save fails, so nothing waits forever", async () => {
+    m.saveTurn.mockRejectedValue(new Error("db down"));
+    const result = await handleChat(request(), body());
+    expect(result.status).toBe(500);
+    const id = await Promise.resolve(tracingOf().traceId);
+    expect(id).not.toBe("new-conversation");
+    expect(typeof id).toBe("string");
+  });
+
+  it("does not trace when no excerpt matched (the model is not called)", async () => {
+    m.findExcerpts.mockResolvedValue([]);
+    await handleChat(request(), body());
+    expect(m.generateAnswer).not.toHaveBeenCalled();
+  });
+});

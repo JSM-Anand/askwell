@@ -101,6 +101,12 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
     return fail("internal_error", "Something went wrong.");
   }
 
+  // Tracing groups a conversation's generations in one trace. A first message has no conversation yet,
+  // so its trace ID settles after the save (or, if the save fails, with a throwaway ID so nothing waits).
+  let resolveTraceId: (id: string) => void = () => {};
+  const traceId: string | Promise<string> =
+    conversationId ?? new Promise<string>((resolve) => (resolveTraceId = resolve));
+
   // From here the message is counted: a failure below still uses it (no refund).
   try {
     // 5. History (read first: it also feeds the search, so a follow-up like "and on Sundays?" can be found).
@@ -115,18 +121,22 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
     if (excerpts.length === 0) {
       reply = NO_ANSWER_REPLY; // nothing to answer from: the chat model is not called
     } else {
-      // 6. Answer. Phase 4: AI tracing wraps generateAnswer.
-      reply = await generateAnswer({
-        system: SYSTEM_PROMPT,
-        messages: [
-          ...toTurns(history),
-          { role: "user", content: buildQuestionMessage(excerpts.map((e) => e.content), message) },
-        ],
-      });
+      // 6. Answer, traced under the project owner (visitors are never identified).
+      reply = await generateAnswer(
+        {
+          system: SYSTEM_PROMPT,
+          messages: [
+            ...toTurns(history),
+            { role: "user", content: buildQuestionMessage(excerpts.map((e) => e.content), message) },
+          ],
+        },
+        { distinctId: ownerId, projectId, traceId },
+      );
     }
 
     // 7. Save.
     const savedConversationId = await saveTurn({ projectId, conversationId, visitorId, message, reply });
+    resolveTraceId(savedConversationId);
     if (!conversationId) {
       await inBackground(async () => {
         if (await isFirstConversation(projectId, savedConversationId)) await trackFirstChat(ownerId, projectId);
@@ -139,5 +149,7 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
     }
     console.error("POST /api/widget/chat failed after counting", cause);
     return fail("internal_error", "Something went wrong.");
+  } finally {
+    resolveTraceId(crypto.randomUUID()); // a no-op once the save has settled it
   }
 }
