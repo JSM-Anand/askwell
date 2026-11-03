@@ -15,6 +15,7 @@ const m = vi.hoisted(() => ({
   getUserBillingSubscription: vi.fn(),
   ensureAccount: vi.fn(),
   trackUpgraded: vi.fn(),
+  capture: vi.fn(),
   updates: [] as unknown[],
 }));
 
@@ -23,6 +24,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 }));
 vi.mock("../../../../lib/accounts/ensure-account", () => ({ ensureAccount: m.ensureAccount }));
 vi.mock("../../../../lib/analytics/events", () => ({ trackUpgraded: m.trackUpgraded }));
+vi.mock("../../../../lib/analytics/server", () => ({ capture: m.capture }));
 // An accounts table of one row, with the update ... where plan <> new semantics the sync relies on.
 vi.mock("../../../../lib/supabase/service", () => ({
   createServiceClient: () => ({
@@ -279,9 +281,15 @@ describe("failures", () => {
     expect(m.updates).toEqual([]);
   });
 
-  it("a failing analytics call does not change the outcome", async () => {
-    m.trackUpgraded.mockResolvedValue(undefined);
+  it("a PostHog failure does not change the outcome: the real tracker swallows it and the plan still flips", async () => {
+    // The real trackUpgraded, with PostHog's capture rejecting: it logs and swallows, so the webhook still answers 200.
+    const real = await vi.importActual<typeof import("../../../../lib/analytics/events")>("../../../../lib/analytics/events");
+    m.trackUpgraded.mockImplementation(real.trackUpgraded);
+    m.capture.mockRejectedValue(new Error("posthog down"));
     const res = await POST(delivery(itemEvent("subscriptionItem.active")));
     expect(res.status).toBe(200);
+    expect(m.capture).toHaveBeenCalledTimes(1);
+    expect(m.updates).toEqual([{ plan: "pro" }]);
+    expect(m.accountPlan).toBe("pro");
   });
 });
