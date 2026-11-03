@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import type { KnowledgeSourceSummary } from "@askwell/shared";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -26,7 +29,19 @@ const STATUS_STYLE = {
   uploading: "border-border bg-glass text-fg-muted",
 } as const;
 
+const deleteButtonId = (sourceId: string) => `delete-source-${sourceId}`;
+
 export function SourceList({ sources, confirmingId, progress, busyId = null, onAskDelete, onCancelDelete, onConfirmDelete }: SourceListProps) {
+  const previousConfirmingId = useRef<string | null>(null);
+
+  // The Delete button is replaced by the confirm while it is open. When the confirm closes without the
+  // source being deleted (Keep it), put focus back on that source's Delete button instead of losing it.
+  useEffect(() => {
+    const was = previousConfirmingId.current;
+    previousConfirmingId.current = confirmingId;
+    if (was && confirmingId === null) document.getElementById(deleteButtonId(was))?.focus();
+  }, [confirmingId]);
+
   if (sources.length === 0) {
     return (
       <EmptyState
@@ -82,14 +97,15 @@ export function SourceList({ sources, confirmingId, progress, busyId = null, onA
                   <Button variant="secondary" className="border-danger" disabled={busyId === source.id} onClick={() => onConfirmDelete(source.id)}>
                     Yes, delete
                   </Button>
-                  <Button variant="ghost" onClick={onCancelDelete}>
+                  {/* The safe action takes focus when the confirm opens. */}
+                  <Button variant="ghost" autoFocus onClick={onCancelDelete}>
                     Keep it
                   </Button>
                 </div>
               </div>
             ) : (
               <div>
-                <Button variant="ghost" onClick={() => onAskDelete(source.id)} aria-label={`Delete ${source.title}`}>
+                <Button variant="ghost" id={deleteButtonId(source.id)} onClick={() => onAskDelete(source.id)} aria-label={`Delete ${source.title}`}>
                   Delete
                 </Button>
               </div>
