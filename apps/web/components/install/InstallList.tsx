@@ -39,7 +39,11 @@ export function InstallList({ projects, origin }: { projects: InstallProject[]; 
         return (
           <GlassPanel key={project.id} className="flex flex-col gap-4">
             <h2 className="text-lg font-semibold">{project.name}</h2>
-            <pre className="overflow-x-auto rounded-md border border-border bg-surface-raised p-3 text-sm">
+            <pre
+              tabIndex={0}
+              aria-label="Script tag to copy"
+              className="overflow-x-auto rounded-md border border-border bg-surface-raised p-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            >
               <code>{snippet}</code>
             </pre>
             <div>
