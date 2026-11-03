@@ -131,7 +131,7 @@ describe("signature", () => {
   });
 
   it.each([[""], ["   "], ['""'], [undefined]])("answers 500 and logs a clear reason when no signing secret is set (%j)", async (value) => {
-    if (value === undefined) vi.unstubAllEnvs();
+    if (value === undefined) vi.stubEnv("CLERK_WEBHOOK_SIGNING_SECRET", undefined);
     else vi.stubEnv("CLERK_WEBHOOK_SIGNING_SECRET", value);
     const res = await POST(delivery(itemEvent("subscriptionItem.active")));
     expect(res.status).toBe(500);
