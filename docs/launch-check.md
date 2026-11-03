@@ -2,7 +2,7 @@
 
 Run on 2026-11-03 against **https://askwell-lilac.vercel.app**, in headless Chromium, with a throwaway Clerk test user. The database is shared with the product owner's real account (decision of the product owner), so only my own rows were touched; they are deleted (section 5).
 
-**Result: all nine §2 steps pass.** Step 8 failed at first because of Clerk endpoint and signing-secret configuration, and passed once the product owner fixed it (section 3). One check is still open: `upgraded` in PostHog for my test user (section 4).
+**Result: all nine §2 steps pass.** Step 8 failed at first because of Clerk endpoint and signing-secret configuration, and passed once the product owner fixed it (section 3). The server events reached PostHog (section 4).
 
 ## 1. What was running
 
@@ -34,7 +34,7 @@ Run on 2026-11-03 against **https://askwell-lilac.vercel.app**, in headless Chro
 | 07:02:28 | Test user paid in Clerk's checkout drawer with "Pay with test card" (dev gateway, Visa 4242, $19): "Payment was successful". Clerk showed an active Pro item. |
 | 07:02 to 07:05 | `accounts.plan` stayed `free`; the Billing page went from "Updating your plan…" to its stalled message ("Your plan still shows as Free… refresh in a minute"), as designed. An unsigned POST to the production webhook returned 400, so the route and secret were live; Clerk was not delivering this event to a matching endpoint. |
 | 07:23 | The product owner fixed the Clerk endpoint URL and the signing secret (`CLERK_WEBHOOK_SIGNING_SECRET` updated 07:23:06) and redeployed (07:23:22). |
-| by 07:34 | The replayed 07:02 delivery applied: my test user was `pro` in the database. The Billing page showed "Pro plan" and Customize unlocked (step 9 ran here). |
+| 07:33:04 | The replayed 07:02 delivery applied (PostHog `upgraded` at 07:33:04): my test user was `pro` in the database. The Billing page showed "Pro plan" and Customize unlocked (step 9 ran here). |
 | 07:35:26 | Cancel at period end (Clerk API): the plan stayed `pro`, as the spec says. |
 | ~07:36 | End now (Clerk API): the row went to `free` within about 20 seconds. |
 | 07:37:42 | **Fresh event:** subscribed again with the test card. Clerk created the Pro item at 07:37:42; the database row was `pro` when I read it a few seconds later. |
@@ -52,7 +52,7 @@ Cause of the first failure: configuration, not code. The product owner pointed t
 | CORS | **Pass** | `/api/widget/config` and `/widget.js` send `access-control-allow-origin: *`; `/api/projects` answers 401 with no `access-control-*` header. |
 | `/embed` framed from a plain HTML page on another origin | **Pass** | Steps 4 and 5 ran through the widget's `/embed` iframe from `http://localhost:8080`. |
 | PostHog (browser) | **Pass** | `/api/posthog-config` returns the public key and host; PostHog scripts and `POST /flags` load with 200 on the landing page and the dashboard; `/embed` makes no PostHog request. |
-| PostHog (server events) | **Partly verified** | Alice found `signed_up` for my test user (07:00:45Z) and an `upgraded` event for the product owner's account at 07:24:33Z, which proves the production webhook captures `upgraded`. I have no PostHog read access; **`upgraded` for my own test user (first at the replay, again at 07:37:42) still needs a PostHog query by someone with access.** |
+| PostHog (server events) | **Pass** | Alice queried project 704738 for my test user (UTC): `signed_up` 07:00:45, `project_created` 07:00:50 (plan free), `knowledge_added` 07:01:00 (pdf), `$ai_generation` and `first_chat` 07:01:16, `$ai_generation` 07:01:20, `upgraded` 07:33:04 (plan pro, the replay) and `upgraded` 07:37:44 (plan pro, the fresh test-card upgrade at 07:37:42, 2 seconds later). The product owner's own account also shows `upgraded` at 07:24:33. No `snippet_copied` for my user: my script clicked Copy in an automated browser, and PostHog's browser SDK drops events from automated browsers, so that client-side event is not evidence either way (Phase 4's check covered it). |
 
 ## 5. Cleanup
 
