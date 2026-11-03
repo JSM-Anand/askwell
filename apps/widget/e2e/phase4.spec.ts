@@ -145,10 +145,13 @@ test("Phase 4: install, chat, see the conversation and the usage", async ({ brow
   } finally {
     await context.close().catch(() => {});
     // Cleanup: the account row (its projects, sources, chunks, conversations and messages cascade), then the Clerk user.
-    await fetch(`${SUPABASE_URL}/rest/v1/accounts?clerk_user_id=eq.${userId}`, {
+    // A secret key (sb_secret_...) goes in `apikey` only.
+    const accountCleanup = await fetch(`${SUPABASE_URL}/rest/v1/accounts?clerk_user_id=eq.${userId}`, {
       method: "DELETE",
-      headers: { apikey: SUPABASE_SECRET_KEY!, Authorization: `Bearer ${SUPABASE_SECRET_KEY}` },
+      headers: { apikey: SUPABASE_SECRET_KEY! },
     });
     await fetch(`https://api.clerk.com/v1/users/${userId}`, { method: "DELETE", headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` } });
+    // Checked last, so a failed database cleanup fails the test but never skips the Clerk cleanup.
+    expect(accountCleanup.ok, "the Supabase account cleanup succeeds").toBe(true);
   }
 });
