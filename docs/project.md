@@ -38,14 +38,14 @@ The whole product in one flow. When this works end to end, the product is done.
 | ---------------- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
 | App              | Next.js (App Router) + TypeScript + Tailwind | Landing (`/`), dashboard (`/dashboard`), widget panel (`/embed`), API routes (`/api/*`) |
 | Widget loader    | Vanilla TypeScript, bundled to one file      | Runs on the customer's site. Button + iframe. Under 5 kb.                               |
-| Database         | Supabase Postgres + pgvector                 | Two projects: dev (shared by developers and Vercel previews) and production. The app talks to it only through `supabase-js` and the Data API (§7). |
+| Database         | Supabase Postgres + pgvector                 | One project, shared by development, Vercel previews and production. The app talks to it only through `supabase-js` and the Data API (§7). |
 | Data access      | `supabase-js`, Postgres functions (`rpc()`)  | Owner client (the owner's Clerk token, RLS applies) and a server-only service client (secret key). Plan and quota limits run inside Postgres functions. |
 | Migrations + types | Supabase CLI                               | SQL files in `supabase/migrations`; types generated into `packages/db/types.ts` (`pnpm db:types`). Tests run on pglite with Supabase's roles stubbed, never a local Supabase stack. |
 | File storage     | Supabase Storage (`supabase-js`)             | Private `knowledge` bucket (10 MB, PDF/Markdown/TXT), created by a migration. The browser uploads straight to Storage with a one-time signed URL. |
 | Hosting          | Vercel                                       | Preview deployment per PR; production from `main`. Request bodies are capped at 4.5 MB, so files never pass through our routes. |
-| Auth             | Clerk                                        | Sign in / sign up UI, sessions, middleware. Supabase accepts Clerk session tokens (third-party auth), so RLS reads the user ID from `auth.jwt()->>'sub'`. |
-| Payments         | Clerk Billing (Clerk payment gateway, test mode) | Clerk's pricing table, Clerk's account portal, Clerk webhook. No Stripe account.    |
-| AI               | Google Gemini                                | One chat model + one embedding model (1536 dims)                                        |
+| Auth             | Clerk                                        | Sign in / sign up UI, sessions, middleware. Supabase accepts Clerk session tokens (third-party auth), so RLS reads the user ID from `auth.jwt()->>'sub'`. Production runs on Clerk's development instance at the vercel.app address (no custom domain yet), so Clerk shows its development banner and has its user limits. |
+| Payments         | Clerk Billing (Clerk payment gateway, test mode) | Clerk's pricing table, Clerk's account portal, Clerk webhook. No Stripe account. Pro is $19/month. |
+| AI               | Google Gemini                                | Free tier, in production too. One chat model + one embedding model (1536 dims). On the free tier, Google may use prompts and replies to improve its products. |
 | Security         | Arcjet                                       | On the public widget routes: a fixed-window rate limit per route + public key + IP, and prompt injection detection on chat messages before any AI call. Fails open: an Arcjet error or timeout lets the request through and is logged. The monthly message quota stays in Postgres. |
 | Analytics        | PostHog                                      | Product analytics, session replay, error tracking, AI tracing                           |
 
@@ -55,18 +55,20 @@ The whole product in one flow. When this works end to end, the product is done.
 
 ## 4. Environments
 
+One Supabase project serves every environment.
+
 | Environment | What it is | Who deploys |
 | --- | --- | --- |
-| Production | Vercel production (from `main`) + the Supabase prod project | Product owner only: merges to `main`, runs any migration, then promotes the build |
-| Preview | A Vercel preview deployment per PR + the Supabase dev project | Automatic on every push to a PR |
-| Local | `pnpm dev` + the Supabase dev project | Each developer |
+| Production | Vercel production (from `main`) at https://askwell-lilac.vercel.app + the shared Supabase project | Product owner only: merges to `main` and promotes the build |
+| Preview | A Vercel preview deployment per PR + the shared Supabase project | Automatic on every push to a PR |
+| Local | `pnpm dev` + the shared Supabase project | Each developer |
 
 | Rule | Detail |
 | --- | --- |
-| Shared dev database | Every developer agent and every preview share the dev project. Never apply an unmerged migration to it. Test new migrations on pglite (`packages/db/supabase-pglite.ts`). No local Supabase or Docker database. |
-| Migrations | Run only after their PR merges: agents apply them to dev through the Supabase MCP (scoped to the dev project), recording the file's version. The product owner applies all of them to prod when production goes live. Every migration is additive ("expand and contract"): the live version keeps working while it runs. Drops and renames come in a later PR, once no deployed code uses the old shape. |
-| Production rollout | Production goes live once, in Phase 6: the product owner creates the Supabase prod project, applies every migration, sets Vercel's production variables, and promotes the build. Until then, a merge to `main` builds production but nothing is promoted. Vercel's automatic production promotion is off. |
-| Dev data is throwaway | Only migration files reach production. Never copy data from dev. |
+| One shared database | Every developer agent, every preview and production use the same Supabase project. Test new migrations on pglite (`packages/db/supabase-pglite.ts`) first, and never apply an unmerged migration. No local Supabase or Docker database. |
+| Real data | Dev data is no longer throwaway: real users live in the shared project. Agents use only their own test users and rows, delete them after every test, and never change or delete anyone else's data. |
+| Migrations | Applied once, after their PR merges, to the shared project: by an agent through the Supabase MCP (recording the file's version) or by the product owner. Every migration is additive ("expand and contract"): the live version keeps working while it runs. Drops and renames come in a later PR, once no deployed code uses the old shape. |
+| Production rollout | Done once, at launch: the product owner set Vercel's production variables (Clerk development-instance keys, Gemini free tier, Arcjet, PostHog, `NEXT_PUBLIC_APP_URL`, `LANDING_WIDGET_KEY`), pointed a Clerk webhook endpoint at the production URL, uploaded `docs/askwell-knowledge.md` to the landing project, and promoted the build. A merge to `main` builds production; the product owner promotes it. The core flow was checked on production (`docs/launch-check.md`). |
 | Never deploy production | Only the product owner merges to `main` and promotes production |
 
 ---
@@ -351,7 +353,7 @@ docs/
 
 `.env.example` lists every variable with no values. `.env` is never committed.
 
-Each Vercel environment gets its Supabase project's values: Production → the prod project, Preview and Development → the dev project.
+Production and Preview use the same Supabase project, so they share its values. `CLERK_WEBHOOK_SIGNING_SECRET` is the secret of the single production webhook endpoint.
 
 ---
 
