@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
 import { APP_NAME } from "@askwell/shared";
+import { PostHogProvider } from "../components/analytics/PostHogProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,7 +19,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       afterSignOutUrl="/sign-in"
     >
       <html lang="en">
-        <body>{children}</body>
+        <body>
+          <PostHogProvider />
+          {children}
+        </body>
       </html>
     </ClerkProvider>
   );
