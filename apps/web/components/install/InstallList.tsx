@@ -41,6 +41,7 @@ export function InstallList({ projects, origin }: { projects: InstallProject[]; 
             <h2 className="text-lg font-semibold">{project.name}</h2>
             <pre
               tabIndex={0}
+              role="group"
               aria-label="Script tag to copy"
               className="overflow-x-auto rounded-md border border-border bg-surface-raised p-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >

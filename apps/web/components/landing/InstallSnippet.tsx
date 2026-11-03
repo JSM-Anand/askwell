@@ -18,6 +18,7 @@ export function InstallSnippet() {
           <GlassPanel className="p-4">
             <pre
               tabIndex={0}
+              role="group"
               aria-label="Example script tag"
               className="overflow-x-auto text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
