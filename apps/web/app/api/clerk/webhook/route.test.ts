@@ -110,10 +110,46 @@ describe("signature", () => {
     expect(m.updates).toEqual([]);
   });
 
-  it("rejects everything when no signing secret is configured", async () => {
-    vi.stubEnv("CLERK_WEBHOOK_SIGNING_SECRET", "");
-    expect((await POST(delivery(itemEvent("subscriptionItem.active")))).status).toBe(400);
+  it.each([
+    ["a trailing newline", `${SIGNING_SECRET}\n`],
+    ["surrounding spaces", `  ${SIGNING_SECRET}  `],
+    ["double quotes", `"${SIGNING_SECRET}"`],
+    ["single quotes", `'${SIGNING_SECRET}'`],
+    ["quotes and a CRLF", `"${SIGNING_SECRET}"\r\n`],
+  ])("still verifies a correctly signed payload when the secret is stored with %s", async (_name, stored) => {
+    vi.stubEnv("CLERK_WEBHOOK_SIGNING_SECRET", stored);
+    const res = await POST(delivery(itemEvent("subscriptionItem.active")));
+    expect(res.status).toBe(200);
+    expect(m.updates).toEqual([{ plan: "pro" }]);
+  });
+
+  it("still rejects a wrong secret with 400 when the stored value is padded", async () => {
+    vi.stubEnv("CLERK_WEBHOOK_SIGNING_SECRET", `"${SIGNING_SECRET}"\n`);
+    const res = await POST(delivery(itemEvent("subscriptionItem.active"), { secretBytes: Buffer.from("another-secret") }));
+    expect(res.status).toBe(400);
     expect(m.updates).toEqual([]);
+  });
+
+  it.each([[""], ["   "], ['""'], [undefined]])("answers 500 and logs a clear reason when no signing secret is set (%j)", async (value) => {
+    if (value === undefined) vi.stubEnv("CLERK_WEBHOOK_SIGNING_SECRET", undefined);
+    else vi.stubEnv("CLERK_WEBHOOK_SIGNING_SECRET", value);
+    const res = await POST(delivery(itemEvent("subscriptionItem.active")));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error.code).toBe("internal_error");
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("CLERK_WEBHOOK_SIGNING_SECRET is missing"));
+    expect(m.updates).toEqual([]);
+  });
+
+  it("logs the reason for a failed check, never the secret or the payload", async () => {
+    await POST(delivery(itemEvent("subscriptionItem.active"), { omitSignature: true }));
+    await POST(delivery(itemEvent("subscriptionItem.active"), { secretBytes: Buffer.from("another-secret") }));
+    const logged = vi.mocked(console.error).mock.calls.flat().join(" ");
+    expect(logged).toContain("missing headers svix-signature");
+    expect(logged).toContain("bad signature");
+    expect(logged).not.toContain(SIGNING_SECRET);
+    expect(logged).not.toContain(SECRET_BYTES.toString("base64"));
+    expect(logged).not.toContain("user_1");
+    expect(logged).not.toContain("subscriptionItem.active");
   });
 
   it("is a cache-less response", async () => {
