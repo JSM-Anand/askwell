@@ -26,6 +26,34 @@ describe("getGemini", () => {
     expect(GoogleGenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "test-key" }));
   });
 
+  it.each([
+    ["trailing newline", "test-key\n", "test-key"],
+    ["surrounding spaces", "  test-key  ", "test-key"],
+    ["double quotes", '"test-key"', "test-key"],
+    ["single quotes", "'test-key'", "test-key"],
+    ["quotes and a newline", '"test-key"\r\n', "test-key"],
+    ["spaces inside quotes", '" test-key "', "test-key"],
+  ])("cleans the key: %s", async (_name, raw, expected) => {
+    vi.stubEnv("GEMINI_API_KEY", raw);
+    const getGemini = await loadFresh();
+    getGemini();
+    expect(GoogleGenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: expected }));
+  });
+
+  it.each([["   "], ['""'], ["\n"]])("treats %j as missing", async (raw) => {
+    vi.stubEnv("GEMINI_API_KEY", raw);
+    const getGemini = await loadFresh();
+    expect(() => getGemini()).toThrow("Missing environment variable GEMINI_API_KEY");
+    expect(GoogleGenAI).not.toHaveBeenCalled();
+  });
+
+  it("keeps quotes that are inside the key or unmatched", async () => {
+    vi.stubEnv("GEMINI_API_KEY", `ab"cd`);
+    const getGemini = await loadFresh();
+    getGemini();
+    expect(GoogleGenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: `ab"cd` }));
+  });
+
   it("returns the same client every time", async () => {
     const getGemini = await loadFresh();
     expect(getGemini()).toBe(getGemini());

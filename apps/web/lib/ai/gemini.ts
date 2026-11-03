@@ -1,6 +1,7 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import { requireEnv } from "../supabase/env";
+import { geminiApiKey } from "./api-key";
 
 let client: GoogleGenAI | undefined;
 
@@ -11,7 +12,7 @@ let client: GoogleGenAI | undefined;
  */
 export function getGemini(): GoogleGenAI {
   client ??= new GoogleGenAI({
-    apiKey: requireEnv("GEMINI_API_KEY", process.env.GEMINI_API_KEY),
+    apiKey: requireEnv("GEMINI_API_KEY", geminiApiKey()),
     httpOptions: { timeout: 60_000 },
   });
   return client;

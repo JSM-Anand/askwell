@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -66,6 +66,7 @@ const sourceStatus = () => db.sources[0]?.status;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "info").mockImplementation(() => {});
   db.chunks = [];
   db.sources = [{ id: "s1", project_id: "p1", status: "processing" }];
   db.insertCalls = 0;
@@ -112,6 +113,25 @@ describe("processSource: ready path", () => {
   it("only touches the status of this source in this project", async () => {
     await processSource({ sourceId: "s1", projectId: "p1", text: "Some text." });
     expect(db.log.at(-1)).toContain('["id","s1"],["project_id","p1"]');
+  });
+});
+
+describe("processSource: startup log line", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("says which embedding model and dimension it uses, and that the key is set, without printing the key", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "AIza-secret-value");
+    await processSource({ sourceId: "s1", projectId: "p1", text: "Some text." });
+    expect(console.info).toHaveBeenCalledTimes(1);
+    const line = vi.mocked(console.info).mock.calls[0]!.join(" ");
+    expect(line).toBe("Processing source: embedding model gemini-embedding-2, 1536 dimensions, GEMINI_API_KEY set");
+    expect(line).not.toContain("secret");
+  });
+
+  it.each([[""], ["  "]])("says the key is missing when it is %j", async (value) => {
+    vi.stubEnv("GEMINI_API_KEY", value);
+    await processSource({ sourceId: "s1", projectId: "p1", text: "Some text." });
+    expect(vi.mocked(console.info).mock.calls[0]!.join(" ")).toContain("GEMINI_API_KEY missing");
   });
 });
 
