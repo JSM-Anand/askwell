@@ -33,6 +33,13 @@ describe("InstallList", () => {
     expect(html).toContain("Reload the page");
   });
 
+  it("makes each snippet box keyboard-focusable and named (a group, so the name is allowed), because it scrolls sideways on a narrow screen", () => {
+    const html = renderToStaticMarkup(
+      <InstallList origin="https://app.example" projects={[{ id: "1", name: "Shop", public_key: "pk_one" }]} />,
+    );
+    expect(html).toMatch(/<pre[^>]*tabindex="0"[^>]*role="group"[^>]*aria-label="Script tag to copy"/);
+  });
+
   it("renders the snippet as text, never HTML", () => {
     const html = renderToStaticMarkup(
       <InstallList origin="https://app.example" projects={[{ id: "1", name: "<b>x</b>", public_key: "pk_one" }]} />,
