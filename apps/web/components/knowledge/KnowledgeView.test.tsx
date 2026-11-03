@@ -213,6 +213,31 @@ describe("deleting", () => {
     expect(screen.getByText("Opening hours")).toBeTruthy();
   });
 
+  it("puts focus on the safe action, Keep it, when the confirm opens", async () => {
+    view([source("a")]);
+    await user().click(screen.getByRole("button", { name: "Delete Source a" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Keep it" }));
+  });
+
+  it("gives focus back to the same source's Delete button when the owner picks Keep it", async () => {
+    view([source("a"), source("b")]);
+    const u = user();
+    await u.click(screen.getByRole("button", { name: "Delete Source b" }));
+    await u.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete Source b" }));
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Delete Source a" }));
+  });
+
+  it("keeps focus handling quiet when a source is actually deleted", async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, { ok: true }));
+    view([source("a"), source("b")]);
+    const u = user();
+    await u.click(screen.getByRole("button", { name: "Delete Source a" }));
+    await u.click(screen.getByRole("button", { name: "Yes, delete" }));
+    await waitFor(() => expect(screen.queryByText("Source a")).toBeNull());
+    expect(screen.getByText("Source b")).toBeTruthy();
+  });
+
   it("keeps the source when the owner picks Keep it", async () => {
     view([source("a")]);
     const u = user();
