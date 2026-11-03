@@ -72,7 +72,7 @@ describe("BillingView", () => {
     for (let i = 0; i < MAX_POLLS; i++) act(() => void vi.advanceTimersByTime(POLL_INTERVAL_MS));
     expect(m.refresh).toHaveBeenCalledTimes(MAX_POLLS);
     expect(screen.queryByText("Updating your plan…")).toBeNull();
-    expect(screen.getByText(/Your plan is still Free/)).toBeTruthy();
+    expect(screen.getByText(/Your plan still shows as Free/)).toBeTruthy();
     act(() => void vi.advanceTimersByTime(POLL_INTERVAL_MS * 5));
     expect(m.refresh).toHaveBeenCalledTimes(MAX_POLLS);
 

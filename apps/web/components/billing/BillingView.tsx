@@ -63,7 +63,7 @@ export function BillingView({ plan, planLabel, checkedOut }: BillingViewProps) {
       {status === "stalled" ? (
         <GlassPanel role="status" className="flex flex-col items-start gap-2">
           <p className="text-sm">
-            Your plan is still Free. If you just paid, the update can take a minute. Refresh in a minute.
+            Your plan still shows as Free. If you just paid, the update can take a minute. Refresh in a minute.
           </p>
           <Button
             variant="secondary"
