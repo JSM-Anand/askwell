@@ -1,14 +1,14 @@
 # Launch check: core flow on production
 
-Run on 2026-11-03 against **https://askwell-lilac.vercel.app**, in headless Chromium, with a throwaway Clerk test user. The database is shared with the product owner's real account (decision of the product owner), so only my own rows were touched; they are deleted (section 5).
+Run on 2026-11-03 against **https://askwell-lilac.vercel.app**, in headless Chromium, with a throwaway Clerk test user. The database is shared with the product owner's real account (decision of the product owner), so my test only created, changed and deleted its own rows (the product owner's own account is shown separately in section 4, and was changed by their own actions, not by this test); they are deleted (section 5).
 
-**Result: all nine §2 steps pass.** Step 8 failed at first because of Clerk endpoint and signing-secret configuration, and passed once the product owner fixed it (section 3). The server events reached PostHog (section 4).
+**Result: eight of the nine §2 steps pass; step 3 is partial.** Step 3 passes except for the sign-up form itself, which this run did not exercise (Clerk's bot protection blocks it in the sandbox, so I signed in with a ticket): the product owner should sign up once by hand. Step 8 failed at first because of Clerk endpoint and signing-secret configuration, and passed once the product owner fixed it (section 3). The server events reached PostHog (section 4).
 
 ## 1. What was running
 
 | | |
 |---|---|
-| Production deployment | `dpl_26md6Nu7…`, commit `0128baa` (merge of #56, includes #55), created 07:23:22 UTC, after the last variable change (`CLERK_WEBHOOK_SIGNING_SECRET`, 07:23:06 UTC) |
+| Production deployments (all commit `0128baa`, merge of #56, includes #55) | `dpl_CQGYk318…` created 06:45:15 UTC, current until 07:16: served steps 3 to 7 and the first payment (07:00 to 07:05 UTC). `dpl_BZL8S8JG…` created 07:16:06, after `LANDING_WIDGET_KEY` was set (07:14:59): served steps 1 and 2. `dpl_26md6Nu7…` created 07:23:22, after the last variable change (`CLERK_WEBHOOK_SIGNING_SECRET`, 07:23:06): served the replay, step 9, cancel, end and the fresh upgrade (07:33 onward). All three have the same code; the variable changes between them only affect the landing widget (step 1 and 2) and the webhook (step 8). |
 | Production variables (names and targets, read through the Vercel API) | `LANDING_WIDGET_KEY` [production], `NEXT_PUBLIC_APP_URL` [preview, production], `GEMINI_API_KEY`, `ARCJET_KEY`, `CLERK_WEBHOOK_SIGNING_SECRET`, `CLERK_SECRET_KEY` and the Supabase variables [production, preview]; `OPENAI_API_KEY` is gone |
 | Database | The dev Supabase project (the product owner's decision: production and dev share it) |
 | Sign-in | Clerk sign-in **ticket** (not the sign-up form: Clerk's bot protection blocks the form in the sandbox). Used for every signed-in step: 3 to 9. |
@@ -19,7 +19,7 @@ Run on 2026-11-03 against **https://askwell-lilac.vercel.app**, in headless Chro
 |---|---|---|---|
 | 1 | Open the landing page; the widget is in the corner | **Pass** | Real widget button "Ask us" in the corner at 1280 and 375 px, no overflow with the panel open. The demo section says "Open the chat button in the corner…". Run as a visitor, after the deployment above. |
 | 2 | Ask it a product question | **Pass** | "How much is Pro?" → "Pro costs $19 per month." "What is the capital of France?" → "I don't know. I can only help with questions about the product." (uses 2 messages of the landing project's monthly quota) |
-| 3 | Sign up, create a project, upload a product PDF | **Pass** (sign-in by ticket) | Signed in, created the project in the dashboard (public key shown), uploaded a one-page PDF on the Knowledge page: source reached **Ready**. |
+| 3 | Sign up, create a project, upload a product PDF | **Partial**: the sign-up form was not exercised; the rest passed (signed in by ticket) | Signed in, created the project in the dashboard (public key shown), uploaded a one-page PDF on the Knowledge page: source reached **Ready**. |
 | 4 | Copy the script tag from Install, paste it in a plain HTML page; the widget appears | **Pass** | The Install page showed `<script src="https://askwell-lilac.vercel.app/widget.js" data-key="pk_…" defer>`. Pasted into a plain HTML page served from `http://localhost:8080` (another origin): the button appeared. |
 | 5 | Ask a question there; the answer comes from the PDF | **Pass** | "What is the signature blend called and how much is it?" → "Our signature blend is called Midnight Ember and costs 14 euros per bag." An unrelated question → "I don't know…". |
 | 6 | Open Conversations; the chat is there | **Pass** | The conversation (4 messages) was listed, and its thread showed the question and the answer. |
@@ -56,7 +56,7 @@ Cause of the first failure: configuration, not code. The product owner pointed t
 
 ## 5. Cleanup
 
-Deleted: the Clerk test user, its account row (which cascades to the project, chunks, conversations and messages), and the uploaded PDF (through the app's delete, so the file left Storage). Verified by query: 0 rows left for the test user, 0 files under the project's Storage prefix. The other two accounts in the database are not mine and were not touched.
+Deleted: the Clerk test user, its account row (which cascades to the project, chunks, conversations and messages), and the uploaded PDF (through the app's delete, so the file left Storage). Verified by query: 0 rows left for the test user, 0 files under the project's Storage prefix. This test did not touch the other two accounts in the database. Their plans changed during the same window through their owners' own actions, not through this test: the product owner's own account has an `upgraded` event at 07:24:33Z (the product owner upgraded their own account, per the lead), and a third account has one at 07:36:06Z (not mine; its owner's action).
 
 ## 6. Notes for the product owner
 
