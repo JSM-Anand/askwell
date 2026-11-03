@@ -11,7 +11,9 @@ const m = vi.hoisted(() => ({
   auth: vi.fn(),
   getAccount: vi.fn(),
   processSource: vi.fn(),
+  trackKnowledgeAdded: vi.fn(),
 }));
+vi.mock("../../../../../lib/analytics/events", () => ({ trackKnowledgeAdded: m.trackKnowledgeAdded }));
 vi.mock("@clerk/nextjs/server", () => ({ auth: m.auth }));
 vi.mock("../../../../../lib/accounts/get-account", () => ({ getAccount: m.getAccount }));
 vi.mock("../../../../../lib/projects/get-owned-project", () => ({
@@ -72,11 +74,19 @@ describe("POST /api/projects/:id/knowledge (paste)", () => {
     expect(m.fake.state.sources).toHaveLength(3);
   });
 
+  it("fires knowledge_added once with the project ID and type, and no title or text", async () => {
+    await call({ title: "Secret title", content: "Secret document text." });
+    expect(m.trackKnowledgeAdded).toHaveBeenCalledTimes(1);
+    expect(m.trackKnowledgeAdded).toHaveBeenCalledWith("user_1", { projectId: PROJECT, type: "text" });
+    expect(JSON.stringify(m.trackKnowledgeAdded.mock.calls)).not.toMatch(/Secret/);
+  });
+
   it("returns the source as failed when processing fails, so the owner can see it and delete it", async () => {
     m.processSource.mockRejectedValueOnce(new Error("embedding service down"));
     const res = await call({ title: "FAQ", content: "x" });
     expect(res.status).toBe(201);
     expect((await res.json()).source.status).toBe("failed");
+    expect(m.trackKnowledgeAdded).not.toHaveBeenCalled();
   });
 
   it("is 404 for another owner's project, and reserves nothing", async () => {

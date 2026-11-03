@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const init = vi.fn();
-vi.mock("posthog-js", () => ({ default: { init } }));
+const captureEvent = vi.fn();
+vi.mock("posthog-js", () => ({ default: { init: (...a: unknown[]) => init(...a), capture: (...a: unknown[]) => captureEvent(...a) } }));
 
-import { initAnalytics, isTrackedPath, resetAnalyticsForTests } from "./client";
+import { initAnalytics, isTrackedPath, resetAnalyticsForTests, trackSnippetCopied } from "./client";
 
 const fetchMock = vi.fn();
 
@@ -66,5 +67,17 @@ describe("initAnalytics", () => {
     expect(await initAnalytics("/")).toBeNull();
     configured();
     expect(await initAnalytics("/")).not.toBeNull();
+  });
+});
+
+describe("trackSnippetCopied", () => {
+  it("is a no-op until PostHog is running, then captures with the project ID only", async () => {
+    captureEvent.mockClear();
+    trackSnippetCopied("p1");
+    expect(captureEvent).not.toHaveBeenCalled();
+    configured();
+    await initAnalytics("/dashboard/install");
+    trackSnippetCopied("p1");
+    expect(captureEvent).toHaveBeenCalledWith("snippet_copied", { project_id: "p1" });
   });
 });

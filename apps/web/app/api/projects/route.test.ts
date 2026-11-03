@@ -10,6 +10,7 @@ const m = vi.hoisted(() => {
   const rpc = vi.fn();
   return {
     auth: vi.fn(),
+    trackProjectCreated: vi.fn(),
     ensureAccount: vi.fn(),
     getAccount: vi.fn(),
     order,
@@ -21,6 +22,7 @@ const m = vi.hoisted(() => {
   };
 });
 vi.mock("@clerk/nextjs/server", () => ({ auth: m.auth }));
+vi.mock("../../../lib/analytics/events", () => ({ trackProjectCreated: m.trackProjectCreated }));
 vi.mock("../../../lib/accounts/ensure-account", () => ({ ensureAccount: m.ensureAccount }));
 vi.mock("../../../lib/accounts/get-account", () => ({ getAccount: m.getAccount }));
 vi.mock("../../../lib/supabase/owner", () => ({ createOwnerClient: m.createOwnerClient }));
@@ -118,6 +120,20 @@ describe("POST /api/projects", () => {
       p_public_key: expect.stringMatching(/^pk_[0-9a-f]{48}$/),
       p_max_projects: PLAN_LIMITS.free.projects,
     });
+  });
+
+  it("fires project_created once, for the owner, with the project ID and plan only", async () => {
+    m.rpc.mockResolvedValueOnce({ data: row(), error: null });
+    await post({ name: "Docs bot" });
+    expect(m.trackProjectCreated).toHaveBeenCalledTimes(1);
+    expect(m.trackProjectCreated).toHaveBeenCalledWith("user_1", { projectId: row().id, plan: "free" });
+  });
+
+  it("does not fire project_created when the plan limit refuses the project", async () => {
+    m.rpc.mockResolvedValueOnce({ data: null, error: { code: "AW001", message: "limit" } });
+    const res = await post({ name: "Docs bot" });
+    expect(res.status).not.toBe(201);
+    expect(m.trackProjectCreated).not.toHaveBeenCalled();
   });
 
   it("passes the Pro limit for a Pro account", async () => {

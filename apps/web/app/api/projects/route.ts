@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { PLAN_LIMITS, createProjectSchema } from "@askwell/shared";
 import type { CreateProjectResponse, ListProjectsResponse } from "@askwell/shared";
+import { trackProjectCreated } from "../../../lib/analytics/events";
 import { ensureAccount } from "../../../lib/accounts/ensure-account";
 import { getAccount } from "../../../lib/accounts/get-account";
 import { apiError, getUserId, json, readJson, unauthorized } from "../../../lib/projects/api";
@@ -63,6 +64,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       });
 
       if (!error) {
+        await trackProjectCreated(userId, { projectId: data.id, plan: account.plan });
         return json<CreateProjectResponse>({ project: toProjectSummary(data) }, 201);
       }
       if (error.code === PROJECT_LIMIT_REACHED) {

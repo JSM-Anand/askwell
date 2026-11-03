@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}));
 const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
 vi.mock("../supabase/service", () => ({ createServiceClient: () => ({ from, rpc }) }));
 
-import { HISTORY_MESSAGES, MATCH_COUNT, consumeMessage, conversationBelongsToProject, findExcerpts, findProject, loadHistory, saveTurn } from "./data";
+import { HISTORY_MESSAGES, MATCH_COUNT, consumeMessage, conversationBelongsToProject, findExcerpts, findProject, isFirstConversation, loadHistory, saveTurn } from "./data";
 
 type Result = { data: unknown; error: { message: string } | null };
 
@@ -25,12 +25,12 @@ function chain(methods: string[], result: Result) {
 beforeEach(() => vi.clearAllMocks());
 
 describe("findProject", () => {
-  it("looks the project up by public key only and selects only the id and the owner's plan", async () => {
-    const { calls, entry } = chain(["select", "eq", "maybeSingle"], { data: { id: "p1", accounts: { plan: "pro" } }, error: null });
+  it("looks the project up by public key only and selects only the id, owner and plan", async () => {
+    const { calls, entry } = chain(["select", "eq", "maybeSingle"], { data: { id: "p1", owner_id: "user_o", accounts: { plan: "pro" } }, error: null });
     from.mockReturnValueOnce(entry);
-    expect(await findProject("pk_a")).toEqual({ id: "p1", plan: "pro" });
+    expect(await findProject("pk_a")).toEqual({ id: "p1", ownerId: "user_o", plan: "pro" });
     expect(from).toHaveBeenCalledWith("projects");
-    expect(calls).toEqual([["select", ["id, accounts(plan)"]], ["eq", ["public_key", "pk_a"]], ["maybeSingle", []]]);
+    expect(calls).toEqual([["select", ["id, owner_id, accounts(plan)"]], ["eq", ["public_key", "pk_a"]], ["maybeSingle", []]]);
   });
 
   it("returns null for an unknown key", async () => {
@@ -39,8 +39,8 @@ describe("findProject", () => {
   });
 
   it.each([[{ plan: "enterprise" }], [null], [{ plan: null }]])("treats an unknown plan (%j) as Free", async (accounts) => {
-    from.mockReturnValueOnce(chain(["select", "eq", "maybeSingle"], { data: { id: "p1", accounts }, error: null }).entry);
-    expect(await findProject("pk_a")).toEqual({ id: "p1", plan: "free" });
+    from.mockReturnValueOnce(chain(["select", "eq", "maybeSingle"], { data: { id: "p1", owner_id: "user_o", accounts }, error: null }).entry);
+    expect(await findProject("pk_a")).toEqual({ id: "p1", ownerId: "user_o", plan: "free" });
   });
 
   it("throws on a database error", async () => {
@@ -160,5 +160,27 @@ describe("saveTurn", () => {
     await expect(saveTurn({ projectId: "p1", conversationId: undefined, visitorId: "v", message: "m", reply: "r" })).rejects.toThrow("could not save the conversation: boom");
     rpc.mockResolvedValueOnce({ data: null, error: null });
     await expect(saveTurn({ projectId: "p1", conversationId: undefined, visitorId: "v", message: "m", reply: "r" })).rejects.toThrow("no conversation id returned");
+  });
+});
+
+describe("isFirstConversation", () => {
+  const methods = ["select", "eq", "order", "order", "limit", "maybeSingle"];
+
+  it("is true when the saved conversation is the project's earliest", async () => {
+    const { calls, entry } = chain(methods, { data: { id: "c1" }, error: null });
+    from.mockReturnValueOnce(entry);
+    expect(await isFirstConversation("p1", "c1")).toBe(true);
+    expect(from).toHaveBeenCalledWith("conversations");
+    expect(calls[1]).toEqual(["eq", ["project_id", "p1"]]);
+  });
+
+  it("is false when an earlier conversation exists", async () => {
+    from.mockReturnValueOnce(chain(methods, { data: { id: "c0" }, error: null }).entry);
+    expect(await isFirstConversation("p1", "c1")).toBe(false);
+  });
+
+  it("throws on a database error", async () => {
+    from.mockReturnValueOnce(chain(methods, { data: null, error: { message: "boom" } }).entry);
+    await expect(isFirstConversation("p1", "c1")).rejects.toThrow("could not read the first conversation: boom");
   });
 });

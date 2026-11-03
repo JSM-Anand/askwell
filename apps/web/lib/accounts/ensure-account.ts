@@ -1,4 +1,5 @@
 import "server-only";
+import { trackSignedUp } from "../analytics/events";
 import { createServiceClient } from "../supabase/service";
 
 /**
@@ -9,16 +10,22 @@ import { createServiceClient } from "../supabase/service";
  * `ignoreDuplicates` makes it `on conflict do nothing`: a second call, or two
  * first loads at once, neither error nor touch an existing row (so a Pro plan
  * is never reset to free).
+ *
+ * `signed_up` fires only when this call really created the row: with `ignoreDuplicates` the insert
+ * returns the new row, and nothing on a conflict.
  */
 export async function ensureAccount(clerkUserId: string): Promise<void> {
-  const { error } = await createServiceClient()
+  const { data, error } = await createServiceClient()
     .from("accounts")
     .upsert(
       { clerk_user_id: clerkUserId, plan: "free" },
       { onConflict: "clerk_user_id", ignoreDuplicates: true },
-    );
+    )
+    .select("clerk_user_id");
 
   if (error) {
     throw new Error(`Could not create the account row: ${error.message}`);
   }
+
+  if (data && data.length > 0) await trackSignedUp(clerkUserId);
 }

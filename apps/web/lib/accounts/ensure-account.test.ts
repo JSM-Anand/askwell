@@ -2,18 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { upsert, from, createServiceClient } = vi.hoisted(() => {
-  const upsert = vi.fn();
+const { upsert, from, createServiceClient, trackSignedUp } = vi.hoisted(() => {
+  const select = vi.fn();
+  const upsert = vi.fn() as ReturnType<typeof vi.fn> & ((...args: unknown[]) => { select: typeof select });
+  upsert.mockImplementation(() => ({ select }));
   const from = vi.fn(() => ({ upsert }));
-  return { upsert, from, createServiceClient: vi.fn(() => ({ from })) };
+  return { upsert: Object.assign(upsert, { select }), from, createServiceClient: vi.fn(() => ({ from })), trackSignedUp: vi.fn() };
 });
+vi.mock("../analytics/events", () => ({ trackSignedUp }));
 vi.mock("../supabase/service", () => ({ createServiceClient }));
 
 import { ensureAccount } from "./ensure-account";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  upsert.mockResolvedValue({ error: null });
+  upsert.select.mockResolvedValue({ data: [{ clerk_user_id: "user_123" }], error: null });
 });
 
 describe("ensureAccount", () => {
@@ -44,7 +47,25 @@ describe("ensureAccount", () => {
   });
 
   it("throws when the database rejects the insert", async () => {
-    upsert.mockResolvedValueOnce({ error: { message: "boom" } });
+    upsert.select.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
     await expect(ensureAccount("user_123")).rejects.toThrow("Could not create the account row: boom");
+  });
+
+  it("fires signed_up once, for the user whose row was created", async () => {
+    await ensureAccount("user_123");
+    expect(trackSignedUp).toHaveBeenCalledTimes(1);
+    expect(trackSignedUp).toHaveBeenCalledWith("user_123");
+  });
+
+  it("does not fire signed_up on the second visit (nothing inserted)", async () => {
+    upsert.select.mockResolvedValueOnce({ data: [], error: null });
+    await ensureAccount("user_123");
+    expect(trackSignedUp).not.toHaveBeenCalled();
+  });
+
+  it("does not fire signed_up when the insert fails", async () => {
+    upsert.select.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+    await expect(ensureAccount("user_123")).rejects.toThrow();
+    expect(trackSignedUp).not.toHaveBeenCalled();
   });
 });

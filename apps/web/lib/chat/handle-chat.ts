@@ -1,13 +1,24 @@
 import "server-only";
+import { after } from "next/server";
 import type { NextRequest } from "next/server";
 import { ERROR_STATUS, PLAN_LIMITS, chatRequestSchema } from "@askwell/shared";
 import type { ApiError, ChatResponse, ErrorCode } from "@askwell/shared";
+import { trackFirstChat, trackMessageBlocked } from "../analytics/events";
+import type { BlockedReason } from "../analytics/events";
 import { embedQuery } from "../ai/embed";
 import { generateAnswer } from "../ai/generate";
 import type { ChatTurn } from "../ai/generate";
 import { AiRateLimitError } from "../ai/rate-limit";
 import { protectChat } from "../security/arcjet";
-import { consumeMessage, conversationBelongsToProject, findExcerpts, findProject, loadHistory, saveTurn } from "./data";
+import {
+  consumeMessage,
+  conversationBelongsToProject,
+  findExcerpts,
+  findProject,
+  isFirstConversation,
+  loadHistory,
+  saveTurn,
+} from "./data";
 import type { HistoryMessage } from "./data";
 import { NO_ANSWER_REPLY, SYSTEM_PROMPT, buildQuestionMessage } from "./prompt";
 
@@ -27,6 +38,29 @@ function toTurns(history: HistoryMessage[]): ChatTurn[] {
   }));
 }
 
+/** Runs after the response when the platform allows it (so a blocked message never waits on analytics), else inline. Never throws. */
+async function inBackground(work: () => Promise<void>): Promise<void> {
+  const safe = async () => {
+    try {
+      await work();
+    } catch (cause) {
+      console.error("Chat analytics failed", cause);
+    }
+  };
+  try {
+    after(safe);
+  } catch {
+    await safe(); // no request scope (a unit test, a script)
+  }
+}
+
+/** Protection blocks before the project is known, so look its owner up for the event. A blocked message stays free of any other work. */
+const trackBlockedByKey = (key: string, reason: BlockedReason) =>
+  inBackground(async () => {
+    const project = await findProject(key);
+    if (project) await trackMessageBlocked(project.ownerId, { projectId: project.id, reason });
+  });
+
 /**
  * POST /api/widget/chat (project.md §6.6): protect, validate, count, retrieve, answer, save.
  * Public route: the project comes from the public key only, never from an owner.
@@ -41,6 +75,7 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
   // 1. Protect. Before any database work, count or AI call, so a blocked message costs nothing.
   const protection = await protectChat(request, key, message);
   if (!protection.allowed) {
+    await trackBlockedByKey(key, protection.reason);
     return protection.reason === "prompt_injection"
       ? fail("prompt_injection", "That message can't be processed.")
       : fail("rate_limited", "Too many messages. Try again in a minute.");
@@ -48,6 +83,7 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
 
   // 2. Validate against the database, then 3. count. A foreign conversation is refused before anything is counted.
   let projectId: string;
+  let ownerId: string;
   try {
     const project = await findProject(key);
     if (!project) return fail("not_found", "No project has that key.");
@@ -55,9 +91,11 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
       return fail("not_found", "No conversation with that id.");
     }
     if (!(await consumeMessage(project.id, PLAN_LIMITS[project.plan].messagesPerMonth))) {
+      await inBackground(() => trackMessageBlocked(project.ownerId, { projectId: project.id, reason: "quota_exceeded" }));
       return fail("quota_exceeded", "This chat has reached its monthly message limit.");
     }
     projectId = project.id;
+    ownerId = project.ownerId;
   } catch (cause) {
     console.error("POST /api/widget/chat failed before counting", cause);
     return fail("internal_error", "Something went wrong.");
@@ -89,6 +127,11 @@ export async function handleChat(request: NextRequest, rawBody: unknown): Promis
 
     // 7. Save.
     const savedConversationId = await saveTurn({ projectId, conversationId, visitorId, message, reply });
+    if (!conversationId) {
+      await inBackground(async () => {
+        if (await isFirstConversation(projectId, savedConversationId)) await trackFirstChat(ownerId, projectId);
+      });
+    }
     return { status: 200, body: { conversationId: savedConversationId, reply } };
   } catch (cause) {
     if (cause instanceof AiRateLimitError) {
