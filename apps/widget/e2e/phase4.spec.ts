@@ -145,13 +145,24 @@ test("Phase 4: install, chat, see the conversation and the usage", async ({ brow
   } finally {
     await context.close().catch(() => {});
     // Cleanup: the account row (its projects, sources, chunks, conversations and messages cascade), then the Clerk user.
-    // A secret key (sb_secret_...) goes in `apikey` only.
-    const accountCleanup = await fetch(`${SUPABASE_URL}/rest/v1/accounts?clerk_user_id=eq.${userId}`, {
-      method: "DELETE",
-      headers: { apikey: SUPABASE_SECRET_KEY! },
-    });
-    await fetch(`https://api.clerk.com/v1/users/${userId}`, { method: "DELETE", headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` } });
-    // Checked last, so a failed database cleanup fails the test but never skips the Clerk cleanup.
-    expect(accountCleanup.ok, "the Supabase account cleanup succeeds").toBe(true);
+    // Both are always attempted, whatever the first one does; failures are reported together afterwards. A 404
+    // means it is already gone, which is fine.
+    const failures: string[] = [];
+    const cleanup = async (what: string, request: () => Promise<Response>) => {
+      try {
+        const res = await request();
+        if (!res.ok && res.status !== 404) failures.push(`${what}: HTTP ${res.status}`);
+      } catch (error) {
+        failures.push(`${what}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+    // A Supabase secret key (sb_secret_...) goes in `apikey` only.
+    await cleanup("Supabase account", () =>
+      fetch(`${SUPABASE_URL}/rest/v1/accounts?clerk_user_id=eq.${userId}`, { method: "DELETE", headers: { apikey: SUPABASE_SECRET_KEY! } }),
+    );
+    await cleanup("Clerk user", () =>
+      fetch(`https://api.clerk.com/v1/users/${userId}`, { method: "DELETE", headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` } }),
+    );
+    expect(failures, "the test data is cleaned up").toEqual([]);
   }
 });
