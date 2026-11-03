@@ -3,8 +3,25 @@ import { GlassPanel } from "../ui/GlassPanel";
 import { Input } from "../ui/Input";
 import { Reveal } from "./Reveal";
 
-/** Static mock of the widget panel. The live widget arrives in a later phase. */
-export function DemoPanel() {
+/**
+ * The live demo. With the landing widget on, it points visitors at the real button in the corner.
+ * Without it (local, previews), it shows a static mock of the panel.
+ */
+export function DemoPanel({ live = false }: { live?: boolean }) {
+  if (live) {
+    return (
+      <section aria-labelledby="demo-title" className="px-4 py-16">
+        <div className="mx-auto max-w-md text-center">
+          <h2 id="demo-title" className="mb-2 text-2xl font-semibold sm:text-3xl">
+            See it in action
+          </h2>
+          <p className="text-sm text-fg-muted">
+            This is the real widget. Open the chat button in the corner and ask it anything about {APP_NAME}.
+          </p>
+        </div>
+      </section>
+    );
+  }
   return (
     <section aria-labelledby="demo-title" className="px-4 py-16">
       <div className="mx-auto max-w-md">
