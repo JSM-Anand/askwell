@@ -1,4 +1,5 @@
 import "server-only";
+import { geminiApiKey } from "../ai/api-key";
 import { embedTexts } from "../ai/embed";
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "../ai/models";
 import { createServiceClient } from "../supabase/service";
@@ -20,7 +21,7 @@ export async function processSource({ sourceId, projectId, text }: ProcessSource
   // One line per run, so a failing deployment shows what it was set up with. Never the key itself.
   console.info(
     `Processing source: embedding model ${EMBEDDING_MODEL}, ${EMBEDDING_DIMENSIONS} dimensions, GEMINI_API_KEY ${
-      process.env.GEMINI_API_KEY?.trim() ? "set" : "missing"
+      geminiApiKey() ? "set" : "missing"
     }`,
   );
   try {
