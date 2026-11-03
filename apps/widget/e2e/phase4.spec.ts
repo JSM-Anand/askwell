@@ -145,13 +145,14 @@ test("Phase 4: install, chat, see the conversation and the usage", async ({ brow
   } finally {
     await context.close().catch(() => {});
     // Cleanup: the account row (its projects, sources, chunks, conversations and messages cascade), then the Clerk user.
-    // Both are always attempted, whatever the first one does; failures are reported together afterwards. A 404
-    // means it is already gone, which is fine.
+    // Both are always attempted, whatever the first one does; failures are reported together afterwards. For Clerk a
+    // 404 means the user is already gone, which is fine. For Supabase every non-OK status is a failure: deleting no
+    // matching row is a 204, while a 404 means something is wrong (an unavailable table).
     const failures: string[] = [];
-    const cleanup = async (what: string, request: () => Promise<Response>) => {
+    const cleanup = async (what: string, request: () => Promise<Response>, alreadyGoneStatus?: number) => {
       try {
         const res = await request();
-        if (!res.ok && res.status !== 404) failures.push(`${what}: HTTP ${res.status}`);
+        if (!res.ok && res.status !== alreadyGoneStatus) failures.push(`${what}: HTTP ${res.status}`);
       } catch (error) {
         failures.push(`${what}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -162,6 +163,7 @@ test("Phase 4: install, chat, see the conversation and the usage", async ({ brow
     );
     await cleanup("Clerk user", () =>
       fetch(`https://api.clerk.com/v1/users/${userId}`, { method: "DELETE", headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` } }),
+      404,
     );
     expect(failures, "the test data is cleaned up").toEqual([]);
   }
